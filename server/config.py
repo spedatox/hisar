@@ -51,6 +51,8 @@ class Settings:
 
         # ── machine (agent / Forge) auth ──
         self.machine_token = os.getenv("HISAR_MACHINE_TOKEN", "")
+        self.library_sync_token = os.getenv("HISAR_LIBRARY_SYNC_TOKEN", "")
+        self.library_reader_token = os.getenv("HISAR_LIBRARY_READER_TOKEN", "")
 
         # ── limits ──
         self.max_upload_bytes = int(os.getenv("HISAR_MAX_UPLOAD_BYTES", str(2 * 1024**3)))

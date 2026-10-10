@@ -185,6 +185,44 @@ export function upload(path, file, { onProgress } = {}) {
   return promise;
 }
 
+/* ── Library (IACON) ────────────────────────────────────────────────── */
+
+export const listLibrary = (includeArchived = false) => request("/library/documents", { params: { include_archived: includeArchived ? "true" : "false" } });
+export const createLibraryDocument = (payload) => json("/library/documents", "POST", payload);
+export const updateLibraryDocument = (id, payload) => json(`/library/documents/${id}`, "PATCH", payload);
+export const purgeLibraryDocument = (id) => request(`/library/documents/${id}`, { method: "DELETE" });
+export const listLibraryRevisions = (id) => request(`/library/documents/${id}/revisions`);
+export const downloadLibraryRevisionUrl = (id) => url(`/library/revisions/${id}/download`);
+
+export function uploadLibraryRevision(docId, file, { onProgress, ...metadata } = {}) {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    for (const [k, v] of Object.entries(metadata)) {
+      if (v) form.append(k, v);
+    }
+
+    xhr.open("POST", url(`/library/documents/${docId}/revisions`));
+    xhr.withCredentials = true;
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total);
+    };
+    xhr.onload = () => {
+      let body = null;
+      try { body = JSON.parse(xhr.responseText); } catch { /* non-JSON error page */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+      else reject(new ApiError(body?.detail || `Upload failed (${xhr.status})`, xhr.status));
+    };
+    xhr.onerror = () => reject(new ApiError("Network error during upload", 0));
+    xhr.onabort = () => reject(new ApiError("Upload cancelled", 0));
+    xhr.send(form);
+  });
+  promise.abort = () => xhr.abort();
+  return promise;
+}
+
 /* ── Google Drive ───────────────────────────────────────────────────── */
 
 export const driveStatus = () => request("/drive/status");

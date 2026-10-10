@@ -41,6 +41,8 @@ class LoginBody(BaseModel):
 async def lifespan(app: FastAPI):
     settings = get_settings()
     vault.bootstrap(settings.sandbox_root)
+    from . import library
+    library.bootstrap_library(settings.sandbox_root)
     for warning in settings.warnings():
         log.warning(warning)
     log.info("Vault ready at %s", settings.sandbox_root)
@@ -180,6 +182,8 @@ def create_app() -> FastAPI:
 
     # ── file routes ──────────────────────────────────────────────────────
 
+    from .library_routes import router as library_router
+    app.include_router(library_router)
     app.include_router(files_router)
 
     # ── static client (dist/) with SPA fallback ──────────────────────────

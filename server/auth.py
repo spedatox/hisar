@@ -159,6 +159,31 @@ def require_machine(request: Request) -> Principal:
     return Principal(kind="machine", name="machine")
 
 
+def _token_ok(supplied: str, expected: str) -> bool:
+    if not expected or not supplied:
+        return False
+    return hmac.compare_digest(supplied, expected)
+
+
+def require_library_sync(request: Request) -> Principal:
+    supplied = request.headers.get("X-Library-Sync-Token", "")
+    if not _token_ok(supplied, get_settings().library_sync_token):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid library sync token")
+    return Principal(kind="machine", name="library_sync")
+
+
+def require_library_reader(request: Request) -> Principal:
+    # A library reader can be an agent (reader token) or the owner themselves.
+    p = _principal_from_request(request)
+    if p and p.is_owner:
+        return p
+        
+    supplied = request.headers.get("X-Library-Reader-Token", "")
+    if not _token_ok(supplied, get_settings().library_reader_token):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid library reader token")
+    return Principal(kind="machine", name="library_reader")
+
+
 def authorize_write(principal: Principal, vault_path: str) -> None:
     """Gate a write by principal scope. Owners write anywhere; machines only
     under SPEDA/ and Forge/."""

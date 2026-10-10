@@ -23,6 +23,11 @@ from .paths import PathError, check_name, normalize, parent_of
 
 router = APIRouter()
 
+LIBRARY_MOUNT = "/Documents/Library"
+
+def is_library_path(path: str) -> bool:
+    return path == LIBRARY_MOUNT or path.startswith(LIBRARY_MOUNT + "/")
+
 
 def _root() -> Path:
     return get_settings().sandbox_root
@@ -103,6 +108,9 @@ async def upload_file(
     authorize_write(principal, p)
     settings = get_settings()
 
+    if is_library_path(p):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Library files must be managed through the Library interface.")
+
     if is_drive_path(p):
         if not principal.is_owner:
             raise HTTPException(status.HTTP_403_FORBIDDEN,
@@ -129,6 +137,9 @@ async def download_file(
 ):
     p = normalize(path)
     disposition = "inline" if inline else "attachment"
+
+    if is_library_path(p):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Library files must be managed through the Library interface.")
 
     if is_drive_path(p):
         drive = get_drive()
@@ -159,6 +170,9 @@ async def make_dir(body: MkdirBody, principal: Principal = Depends(current_princ
     p = normalize(body.path)
     authorize_write(principal, p)
 
+    if is_library_path(p):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Library files must be managed through the Library interface.")
+
     if is_drive_path(p):
         if not principal.is_owner:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Machine credentials cannot write to Google Drive.")
@@ -172,6 +186,9 @@ async def make_dir(body: MkdirBody, principal: Principal = Depends(current_princ
 async def rename_entry(body: RenameBody, principal: Principal = Depends(require_owner)):
     p = normalize(body.path)
 
+    if is_library_path(p):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Library files must be managed through the Library interface.")
+
     if is_drive_path(p):
         entry = await get_drive().rename(p, body.name)
         return _drive_entry_to_json(entry, parent_of(p))
@@ -182,6 +199,9 @@ async def rename_entry(body: RenameBody, principal: Principal = Depends(require_
 @router.delete("/files/delete")
 async def delete_entry(path: str = Query(...), principal: Principal = Depends(require_owner)):
     p = normalize(path)
+
+    if is_library_path(p):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Library files must be managed through the Library interface.")
 
     if is_drive_path(p):
         await get_drive().delete(p)
