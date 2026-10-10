@@ -34,6 +34,8 @@ const useResponsive = () => {
 
 const TRANSLATIONS = {
   en: {
+    iacon: "IACON Library",
+
     // Menubar
     about_reserve: "About This Reserve",
     system_settings: "System Settings…",
@@ -148,6 +150,8 @@ const TRANSLATIONS = {
     appName_subtitle: "Fast Communication Storage and Transfer Reserve",
   },
   tr: {
+    iacon: "IACON Kütüphanesi",
+
     // Menubar
     about_reserve: "Bu Rezerv Hakkında",
     system_settings: "Sistem Ayarları…",
@@ -360,6 +364,19 @@ const FolderIcon = ({ s = 30 }) => (
 );
 
 // Reserve drive (storage) — glass slab with cyan platter + amber activity light
+
+const IaconIcon = ({ s = 56 }) => (
+  <svg width={s} height={s} viewBox="0 0 64 56" aria-hidden style={{ display: "block" }}>
+    <rect x="5" y="8" width="54" height="42" rx="8" fill="rgba(54,171,202,0.14)" stroke="rgba(150,205,245,0.42)" strokeWidth="1.2" />
+    <path d="M5 16a8 8 0 0 1 8-8h38a8 8 0 0 1 8 8z" fill="#fff" opacity=".07" />
+    <ellipse cx="32" cy="20" rx="14" ry="4" fill="none" stroke="#8fdcef" strokeWidth="1.5" />
+    <ellipse cx="32" cy="28" rx="14" ry="4" fill="none" stroke="#8fdcef" strokeWidth="1.5" />
+    <ellipse cx="32" cy="36" rx="14" ry="4" fill="none" stroke="#8fdcef" strokeWidth="1.5" />
+    <path d="M18 20v16M46 20v16" fill="none" stroke="#8fdcef" strokeWidth="1.5" opacity="0.6"/>
+    <circle cx="48" cy="42" r="2.4" fill="var(--amber-bright)" />
+  </svg>
+);
+
 const DriveIcon = ({ s = 56 }) => (
   <svg width={s} height={s} viewBox="0 0 64 56" aria-hidden style={{ display: "block" }}>
     <rect x="5" y="8" width="54" height="40" rx="8" fill="rgba(54,171,202,0.14)" stroke="rgba(150,205,245,0.42)" strokeWidth="1.2" />
@@ -2091,6 +2108,8 @@ function Desktop({ theme, setTheme, user, onLogout }) {
 
   // Desktop icons — draggable, snap to a Windows-style grid on drop
   const [deskIcons, setDeskIcons] = useState(() => [
+    { id: "iacon", label: "Library", path: "/Documents/Library", iacon: true, ...gridPos(0, 5) },
+
     { id: "reserve", label: "Reserve", path: "/", drive: true, ...gridPos(0, 0) },
     { id: "documents", label: "Documents", path: "/Documents", ...gridPos(0, 1) },
     { id: "media", label: "Media", path: "/Media", ...gridPos(0, 2) },
@@ -2275,7 +2294,7 @@ function Desktop({ theme, setTheme, user, onLogout }) {
       {!isMobile && deskIcons.map((d) => (
         <div key={d.id} className={`desk-ic${deskSel === d.id ? " sel" : ""}${deskDrag === d.id ? " drag" : ""}`} style={{ left: d.x, top: d.y }}
           onMouseDown={dragDesk(d.id)} onDoubleClick={() => openFinder(d.path)}>
-          {d.gdrive ? <DriveGlyph s={56} /> : d.drive ? <DriveIcon s={56} /> : <FolderIcon s={56} />}
+          {d.gdrive ? <DriveGlyph s={56} /> : d.drive ? <DriveIcon s={56} /> : d.iacon ? <IaconIcon s={56} /> : <FolderIcon s={56} />}
           <div className="lbl">{d.gdrive ? t("google_drive") : t(d.id)}</div>
         </div>
       ))}
