@@ -472,9 +472,16 @@ def resolve_documents(conn, document_ids, agent_id):
         doc = get_document(conn, doc_id)
         allowed = bool(doc and not doc.is_tombstone)
         if allowed:
-            policy = _policy(doc.access_policy)
-            agents = policy.get("allowed_agents")
-            allowed = agents is None or agent_id in agents
+            # The original catalog stored this exact all-agent policy. Interpret
+            # it on reads without rewriting owner metadata or relaxing writes.
+            policy = {} if doc.access_policy == {"type": "global"} else doc.access_policy
+            try:
+                agents = _policy(policy).get("allowed_agents")
+                allowed = agents is None or agent_id in agents
+            except HTTPException:
+                # An unknown stored policy denies this record; it must not break
+                # a batch containing other authorized documents.
+                allowed = False
         items.append({"document_id": doc_id, "access_granted": allowed,
                       "active_revision_id": doc.active_revision_id if allowed else None,
                       "is_archived": doc.is_archived if allowed else False,

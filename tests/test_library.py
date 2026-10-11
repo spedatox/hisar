@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 
 from .test_api import client, owner
 from server import library
@@ -95,6 +96,31 @@ def test_scoped_reader_cannot_bypass_policy_through_download_or_manifest(owner):
     assert owner.get("/library/manifest", headers=READER).status_code == 401
     assert owner.get("/library/manifest", headers=SYNC).status_code == 200
     assert owner.post("/library/resolve", headers=READER, json={"document_ids": [doc["id"]], "agent_id": ""}).status_code == 422
+
+
+def test_legacy_global_policy_and_unknown_policy_do_not_break_resolution(owner):
+    records = [add(owner, title=str(index)) for index in range(4)]
+    ids = [record["document"]["id"] for record in records]
+    policies = [{"type": "global"}, {"type": "unknown"}, {"allowed_agents": "speda"}, {}]
+    conn = library.get_connection(get_settings().sandbox_root)
+    try:
+        for doc_id, policy in zip(ids, policies):
+            conn.execute("UPDATE documents SET access_policy=? WHERE id=?", (json.dumps(policy), doc_id))
+        conn.commit()
+        owner.cookies.clear()
+        response = owner.post("/library/resolve", headers=READER,
+                              json={"document_ids": ids, "agent_id": "speda"})
+        assert response.status_code == 200, response.text
+        items = response.json()["items"]
+        assert [item["access_granted"] for item in items] == [True, False, False, True]
+        assert items[1]["record"] is None and items[2]["record"] is None
+        assert library.get_document(conn, ids[0]).access_policy == {"type": "global"}
+        assert library.get_document(conn, ids[1]).access_policy == {"type": "unknown"}
+        with pytest.raises(HTTPException) as rejected:
+            library._policy({"type": "global"})
+        assert rejected.value.status_code == 422
+    finally:
+        conn.close()
 
 
 def test_original_format_size_and_date_validation(owner, monkeypatch):
