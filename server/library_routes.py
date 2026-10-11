@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, Requ
 from . import library
 from .auth import Principal, require_owner, require_library_reader, require_library_sync
 from .config import get_settings
-from .library_models import CreateDocumentRequest, UpdateDocumentRequest, ResolveRequest
+from .library_models import CreateDocumentRequest, UpdateDocumentRequest, ResolveRequest, LibrarySettingsUpdate, LibraryProgressRequest
 
 router = APIRouter(prefix="/library", tags=["library"])
 
@@ -77,9 +77,23 @@ def original(rev_id: str, inline: bool = False, conn=Depends(get_db), principal=
 
 
 @router.post("/documents/{doc_id}/retry")
-def retry(doc_id: str, request: Request, tasks: BackgroundTasks, conn=Depends(get_db), principal=Depends(require_owner)):
-    tasks.add_task(request.app.state.library_delivery.notify)
-    return library.request_reindex(conn, doc_id)
+async def retry(doc_id: str, request: Request, conn=Depends(get_db), principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.retry(conn, doc_id)
+
+
+@router.get("/settings")
+async def library_settings(request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.control("GET", "/library/settings")
+
+
+@router.put("/settings")
+async def save_library_settings(values: LibrarySettingsUpdate, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.control("PUT", "/library/settings", values.transport_payload())
+
+
+@router.post("/progress")
+async def progress(values: LibraryProgressRequest, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.control("POST", "/library/progress", values.model_dump())
 
 
 @router.get("/documents/{doc_id}/index-status")

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api.js";
+import IaconSettings from "./IaconSettings.jsx";
 import "./iacon.css";
 
 const copy = {
@@ -26,7 +27,7 @@ const copy = {
     ready_ocr: "OCR · verify original",
     failed: "Index failed", no_edition: "No edition", withdrawn: "Withdrawn", archivedState: "Archived",
     reviewHint: "This edition needs extraction review. Its original remains available; it is not used as answer evidence.",
-    pendingHint: "This edition is awaiting indexing. Refresh to reconcile with Igor and check progress.",
+    pendingHint: "Indexing starts after upload. Status updates automatically here; retry sends an immediate request if work is stuck.",
     readyHint: "This edition is available to authorized agents through cited keyword retrieval.",
     ocrHint: "This edition includes OCR transcription. Agents can cite it with a review warning; verify details against the original.",
     reference: "Reference", academic_calendar: "Academic calendar", syllabus: "Syllabus", transcript: "Transcript",
@@ -55,7 +56,7 @@ const copy = {
     ready_ocr: "OCR · özgünü doğrula",
     failed: "Dizinleme başarısız", no_edition: "Sürüm yok", withdrawn: "Geri çekildi", archivedState: "Arşivlendi",
     reviewHint: "Bu sürümün çıkarımı inceleme gerektiriyor. Özgün belge açılabilir; yanıt kanıtı olarak kullanılmaz.",
-    pendingHint: "Bu sürüm dizinlenmeyi bekliyor. Igor ile eşitlemek ve durumu görmek için yenile.",
+    pendingHint: "Dizinleme yüklemeden sonra başlar. Durum burada otomatik güncellenir; iş takılırsa yeniden dene hemen bir istek gönderir.",
     readyHint: "Bu sürüm, izinli ajanlar tarafından kaynaklı sözcük aramasıyla kullanılabilir.",
     ocrHint: "Bu sürüm OCR çıkarımı içerir. Ajanlar doğrulama uyarısıyla kaynak gösterebilir; ayrıntıları özgün belgede doğrula.",
     reference: "Kaynak", academic_calendar: "Akademik takvim", syllabus: "Ders izlencesi", transcript: "Transkript",
@@ -85,6 +86,10 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
   const [progress, setProgress] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [page, setPage] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [indexing, setIndexing] = useState({});
+  const [engineError, setEngineError] = useState("");
+  const [retrying, setRetrying] = useState(null);
   const formRef = useRef(null);
   const uploadRef = useRef(null);
   const requestRef = useRef(0);
@@ -116,6 +121,54 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
   useEffect(() => { reload(); return () => { requestRef.current++; }; }, [reload]);
   useEffect(() => () => uploadRef.current?.abort(), []);
   const record = records.find((r) => r.document.id === selected);
+  const documentIds = records.filter((r) => !r.document.is_archived && r.active_revision).map((r) => r.document.id).join(",");
+  useEffect(() => {
+    let live = true, timer;
+    const poll = async () => {
+      try {
+        if (document.visibilityState !== "hidden" && documentIds) {
+          const ids = documentIds.split(","), rows = [];
+          for (let offset = 0; offset < ids.length; offset += 100) {
+            const result = await api.getLibraryProgress(ids.slice(offset, offset + 100));
+            rows.push(...result.records);
+          }
+          if (live) { setIndexing(Object.fromEntries(rows.map((row) => [row.document_id, row]))); setEngineError(""); }
+        }
+      } catch (err) { if (live) { setEngineError(err.message); if (err.status === 401) onError(err); } }
+      finally { if (live) timer = setTimeout(poll, 3000); }
+    };
+    poll();
+    return () => { live = false; clearTimeout(timer); };
+  }, [documentIds, onError]);
+  const liveStatus = (r) => {
+    const value = indexing[r.document.id];
+    return value && (value.state === "not_synced" || value.revision_id === r.active_revision?.id) ? value : null;
+  };
+  const retry = async () => {
+    setRetrying(selected); setError("");
+    try {
+      await api.retryLibraryIndex(selected);
+      notify(lang === "tr" ? "Yeniden deneme kabul edildi. Dizinleme durumu otomatik güncellenir." : "Retry accepted. Indexing status updates automatically.");
+      const result = await api.getLibraryProgress([selected]);
+      setIndexing((before) => ({ ...before, ...Object.fromEntries(result.records.map((row) => [row.document_id, row])) }));
+      await reload();
+    } catch (err) { setError(err.message); if (err.status === 401) onError(err); }
+    finally { setRetrying(null); }
+  };
+  const indexingView = (r) => {
+    const info = liveStatus(r);
+    if (!info) return null;
+    const p = info.progress || {}, running = ["pending", "processing", "retry_wait", "not_synced"].includes(info.state);
+    const names = lang === "tr" ? { queued: "Sırada", downloading: "Özgün belge indiriliyor", extracting: "Metin çıkarılıyor", ocr: "Taranmış sayfa okunuyor", publishing: "Pasajlar kaydediliyor", embedding: "Anlamsal arama hazırlanıyor", ready: "Dizinleme tamamlandı", retry_wait: "Yeniden deneme bekleniyor", awaiting_sync: "Igor ile eşitleme bekleniyor", failed: "Dizinleme başarısız", needs_review: "İnceleme gerekli" } :
+      { queued: "Queued", downloading: "Downloading original", extracting: "Extracting text", ocr: "Reading scanned page", publishing: "Saving passages", embedding: "Preparing semantic search", ready: "Indexing complete", retry_wait: "Waiting to retry", awaiting_sync: "Awaiting Igor sync", failed: "Indexing failed", needs_review: "Needs review" };
+    return <div className="iacon-index-progress" role="status"><strong>{names[p.stage] || stateLabel(info.state)}</strong>
+      {running && <progress aria-label={names[p.stage] || c.processing} max={p.total || undefined} value={p.total ? p.completed || 0 : undefined} />}
+      {p.total > 0 && <small>{p.completed || 0} / {p.total} {p.unit === "pages" ? (lang === "tr" ? "sayfa" : "pages") : (lang === "tr" ? "pasaj" : "passages")}</small>}
+      {info.semantic?.enabled && <small>{lang === "tr" ? "Anlamsal arama" : "Semantic search"}: {info.semantic.indexed} / {info.semantic.total} {lang === "tr" ? "pasaj hazır" : "passages ready"}</small>}
+      {info.message && <p>{info.message}</p>}
+      {info.retry_after && <small>{lang === "tr" ? "Bir sonraki kurtarma için uygun:" : "Eligible for next recovery:"} {new Date(info.retry_after).toLocaleTimeString()} · {lang === "tr" ? "Yeniden dene şimdi başlatır" : "Retry starts it now"}</small>}
+    </div>;
+  };
   useEffect(() => {
     let live = true;
     setEditions([]);
@@ -195,17 +248,17 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
     } catch (err) { onError(err); }
     finally { uploadRef.current = null; setBusy(false); setProgress(null); }
   };
-  const stateLabel = (state) => state === "archived" ? c.archivedState : c[state] || state;
+  const stateLabel = (state) => state === "archived" ? c.archivedState : state === "not_synced" ? (lang === "tr" ? "Eşitleme bekliyor" : "Awaiting sync") : state === "retry_wait" ? (lang === "tr" ? "Yeniden deneme bekliyor" : "Waiting to retry") : c[state] || state;
   const counts = { active: records.filter((r) => !r.document.is_archived).length };
 
   return <div className="iacon" onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
     onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}
     onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy && !editing && e.dataTransfer.files[0]) start("new", e.dataTransfer.files[0]); }}>
-    <header className="iacon-header"><div><div className="iacon-kicker">I A C O N</div><h1>{c.hall}</h1><p>{c.subtitle}</p></div>
-      <div className="iacon-actions"><button disabled={loading || busy} onClick={() => reload(true)}>{c.refresh}</button>
+    <header className="iacon-header"><div className="iacon-brand"><span className="iacon-optimus-logo" aria-hidden="true" /><div><div className="iacon-kicker">IACON</div><h1>{c.hall}</h1><p>{c.subtitle}</p></div></div>
+      <div className="iacon-actions"><button onClick={() => setSettingsOpen((open) => !open)}>{lang === "tr" ? "Ayarlar" : "Settings"}</button><button disabled={loading || busy} onClick={() => reload(true)}>{c.refresh}</button>
         <button className="primary" disabled={busy} onClick={() => start("new")}>+ {c.new}</button></div></header>
-    {error && <div className="iacon-alert" role="alert">{error}</div>}
-    <div className="iacon-layout">
+    {(error || engineError) && <div className="iacon-alert" role="alert">{error || engineError}</div>}
+    {settingsOpen ? <IaconSettings lang={lang} onClose={() => setSettingsOpen(false)} onSaved={() => reload()} onError={onError} /> : <div className="iacon-layout">
       <nav className="iacon-collections" aria-label={c.collections}>
         <div className="iacon-count">{counts.active}<small>{c.recordCount}</small></div>
         <button className={!archived && collection === null ? "selected" : ""} onClick={() => { setArchived(false); setCollection(null); }}>{c.all}<span>{counts.active}</span></button>
@@ -225,7 +278,8 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
               <td><button className="iacon-record-title" onClick={() => setSelected(r.document.id)}><span className="iacon-filemark" aria-hidden="true">▤</span>
                 <span><strong>{r.document.title}</strong><small>{c[r.document.type] || r.document.type || c.reference} · {r.document.category || c.uncategorized}</small></span></button></td>
               <td><span className="iacon-edition">{r.active_revision ? String(r.active_revision.sequence).padStart(2, "0") : "—"}</span><small>{r.active_revision?.issue_date || "—"}</small></td>
-              <td><span className={"iacon-status " + r.index_status}>{stateLabel(r.index_status)}</span></td>
+              <td><span className={"iacon-status " + (liveStatus(r)?.state || r.index_status)}>{stateLabel(liveStatus(r)?.state || r.index_status)}</span>
+                {["pending", "processing", "retry_wait"].includes(liveStatus(r)?.state) && indexingView(r)}</td>
             </tr>)}</tbody></table></div>
             {visible.length > 30 && <div className="iacon-pagination"><button disabled={page === 0} onClick={() => setPage((v) => v - 1)}>{c.previous}</button><span>{page + 1} / {Math.ceil(visible.length / 30)}</span>
               <button disabled={(page + 1) * 30 >= visible.length} onClick={() => setPage((v) => v + 1)}>{c.more}</button></div>}</>}
@@ -233,7 +287,8 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
       <aside className="iacon-inspector">
         {!record ? <p className="iacon-note">{c.select}</p> : <>
           <div className="iacon-kicker">{c.title}</div><h2>{record.document.title}</h2>
-          <span className={"iacon-status " + record.index_status}>{stateLabel(record.index_status)}</span>
+          <span className={"iacon-status " + (liveStatus(record)?.state || record.index_status)}>{stateLabel(liveStatus(record)?.state || record.index_status)}</span>
+          {indexingView(record)}
           <p className="iacon-note">{record.index_status === "ready_keyword" ? c.readyHint : record.index_status === "ready_ocr" ? c.ocrHint : record.index_status === "needs_review" ? c.reviewHint : c.pendingHint}</p>
           {record.active_revision && <><a className="iacon-open" href={api.downloadLibraryRevisionUrl(record.active_revision.id, true)} target="_blank" rel="noopener noreferrer">{c.original} ↗</a>
             <dl><dt>{c.filename}</dt><dd>{record.active_revision.original_filename}</dd><dt>{c.size}</dt><dd>{api.fmtBytes(record.active_revision.size_bytes)}</dd>
@@ -241,7 +296,7 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
               <dt>{c.term}</dt><dd>{record.active_revision.term || "—"}</dd></dl></>}
           <div className="iacon-record-actions"><button disabled={busy || record.document.is_archived} onClick={() => start("edition")}>{c.newEdition}</button>
             <button disabled={busy} onClick={() => start("edit")}>{c.details}</button>
-            <button disabled={busy || !record.active_revision || record.document.is_archived} onClick={() => action(() => api.retryLibraryIndex(selected))}>{c.retry}</button>
+            <button disabled={busy || retrying === selected || liveStatus(record)?.state === "processing" || !record.active_revision || record.document.is_archived} onClick={retry}>{retrying === selected ? (lang === "tr" ? "İstek gönderiliyor…" : "Sending request…") : c.retry}</button>
             <button disabled={busy} onClick={() => {
               if (record.document.is_archived || window.confirm(c.confirmArchive)) action(() => api.updateLibraryDocument(selected,
                 { expected_version: record.document.metadata_version, is_archived: !record.document.is_archived }));
@@ -253,7 +308,7 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
               onClick={() => action(() => api.updateLibraryDocument(selected, { expected_version: record.document.metadata_version, active_revision_id: rev.id }))}>{c.activate}</button>}</div></li>)}</ol>
         </>}
       </aside>
-    </div>
+    </div>}
     {dragging && <div className="iacon-drop" aria-hidden="true">{c.drop}</div>}
     {editing && <div className="iacon-modal"><form ref={formRef} onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="iacon-form-title">
       <div className="iacon-kicker">I A C O N</div><h2 id="iacon-form-title">{editing === "new" ? c.new : editing === "edit" ? c.details : c.newEdition}</h2>

@@ -2,7 +2,25 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, SecretStr, ConfigDict
+
+
+class LibrarySettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    semantic_enabled: bool
+    ocr_enabled: bool
+    ocr_languages: str = Field(default="tur+eng", pattern=r"^[a-z]{3}(?:\+[a-z]{3}){0,4}$")
+    embedding_api_key: SecretStr | None = Field(default=None, max_length=512)
+
+    def transport_payload(self):
+        values = self.model_dump(exclude={"embedding_api_key"})
+        if self.embedding_api_key is not None:
+            values["embedding_api_key"] = self.embedding_api_key.get_secret_value()
+        return values
+
+
+class LibraryProgressRequest(BaseModel):
+    document_ids: list[str] = Field(max_length=100)
 
 
 class LibraryDocument(BaseModel):

@@ -195,6 +195,9 @@ export const listLibraryRevisions = (id) => request(`/library/documents/${id}/re
 export const downloadLibraryRevisionUrl = (id, inline = false) => url(`/library/revisions/${id}/download`, { inline });
 export const retryLibraryIndex = (id) => request(`/library/documents/${id}/retry`, { method: "POST" });
 export const refreshLibrary = () => request("/library/reconcile", { method: "POST" });
+export const getLibrarySettings = () => request("/library/settings");
+export const saveLibrarySettings = (values) => json("/library/settings", "PUT", values);
+export const getLibraryProgress = (documentIds) => json("/library/progress", "POST", { document_ids: documentIds });
 
 export function uploadLibraryRevision(docId, file, { onProgress, ...metadata } = {}) {
   return uploadLibraryForm(`/library/documents/${docId}/revisions`, file, { onProgress, ...metadata });

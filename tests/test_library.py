@@ -124,8 +124,17 @@ def test_receipts_are_revision_scoped_and_reindex_is_durable(owner):
     assert response.status_code == 200
     records = owner.get("/library/documents").json()["records"]
     assert next(r for r in records if r["document"]["id"] == first["document"]["id"])["index_status"] == "ready_ocr"
-    assert owner.post(f"/library/documents/{first['document']['id']}/retry").status_code == 200
+    retry = owner.post(f"/library/documents/{first['document']['id']}/retry")
+    assert retry.status_code == 503 and "not connected" in retry.json()["detail"]
     assert owner.get("/library/events", headers=SYNC).json()["events"][-1]["event_type"] == "index_requested"
+
+
+def test_settings_and_progress_require_owner_and_report_missing_engine(owner):
+    assert owner.get("/library/settings").status_code == 503
+    assert owner.post("/library/progress", json={"document_ids": []}).status_code == 503
+    owner.cookies.clear()
+    assert owner.get("/library/settings").status_code == 401
+    assert owner.post("/library/progress", json={"document_ids": []}).status_code == 401
 
 
 def test_generic_vault_cannot_mutate_hall_or_reach_internals(owner):
