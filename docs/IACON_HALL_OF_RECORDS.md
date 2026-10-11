@@ -27,9 +27,13 @@ storage; missing delivery is recoverable by owner refresh or n8n. No token is
 sent to browser code.
 
 Original uploads accept PDF, text/Markdown/CSV, images, DOCX and XLSX up to
-25 MiB. Igor currently extracts text PDF, UTF-8 text and CSV; scans and other
-formats retain their originals with an honest needs_review status. No OCR or
-vector retrieval is claimed. Readiness receipts describe a specific edition;
+25 MiB. Igor extracts text PDF, UTF-8 text/CSV, text DOCX and XLSX, preserving
+heading/table or sheet/row/cell provenance. Optional local Tesseract/Poppler OCR
+returns ready_ocr and labeled machine transcription with verification warnings;
+the UI keeps these distinct from ordinary keyword-ready evidence. Disabled or
+failed extraction retains originals with needs_review. Optional semantic jobs
+and hybrid search are owned by Igor, and require explicit configuration there.
+Readiness receipts describe a specific edition;
 old fake ready statuses become pending.
 
 The full implementation contract, limits, migration, backup/deployment notes

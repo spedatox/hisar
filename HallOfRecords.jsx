@@ -16,17 +16,19 @@ const copy = {
     save: "Save record", cancel: "Cancel", file: "Original file", dates: "Edition dates (optional)",
     datesHint: "Set coverage dates for time-specific references, such as a monthly menu. Upload dates are not evidence of coverage.",
     formats: "PDF, TXT, Markdown, CSV, images, DOCX or XLSX · up to 25 MB",
-    honest: "Text PDF, text and CSV support keyword retrieval. Scans and other formats retain their originals and need review.",
+    honest: "PDF, text, CSV, Word and Excel support cited retrieval. Local OCR is optional; transcriptions carry review warnings.",
     saved: "Record saved", archived: "Record updated", aliases: "Aliases (comma separated)", agents: "Allowed agents (comma separated)",
     agentsHint: "Choose all, selected or no assistants. Execution workers receive no credentials.",
     access: "Agent access", allAgents: "All assistants", selectedAgents: "Selected assistants", noAgents: "No assistants",
     uncategorized: "Unfiled", recordCount: "records", working: "Saving…", previous: "Previous", more: "Next",
     notConfigured: "Originals are stored. Connect Igor to enable indexing.", drop: "Drop one original to add a record",
     pending: "Queued", processing: "Indexing", ready_keyword: "Keyword ready", needs_review: "Needs review",
+    ready_ocr: "OCR · verify original",
     failed: "Index failed", no_edition: "No edition", withdrawn: "Withdrawn", archivedState: "Archived",
     reviewHint: "This edition needs extraction review. Its original remains available; it is not used as answer evidence.",
     pendingHint: "This edition is awaiting indexing. Refresh to reconcile with Igor and check progress.",
     readyHint: "This edition is available to authorized agents through cited keyword retrieval.",
+    ocrHint: "This edition includes OCR transcription. Agents can cite it with a review warning; verify details against the original.",
     reference: "Reference", academic_calendar: "Academic calendar", syllabus: "Syllabus", transcript: "Transcript",
     cafeteria_menu: "Cafeteria menu", book: "Book", confirmArchive: "Archive this record? Its originals and editions will be retained.",
   },
@@ -43,17 +45,19 @@ const copy = {
     save: "Kaydı kaydet", cancel: "İptal", file: "Özgün dosya", dates: "Sürüm tarihleri (isteğe bağlı)",
     datesHint: "Aylık menü gibi tarihli kaynaklara kapsam tarihi ekle. Yükleme tarihi kapsamı kanıtlamaz.",
     formats: "PDF, TXT, Markdown, CSV, görsel, DOCX veya XLSX · en fazla 25 MB",
-    honest: "Metin PDF, metin ve CSV anahtar sözcük aramasını destekler. Taramalar ve diğer biçimler saklanır, inceleme gerektirir.",
+    honest: "PDF, metin, CSV, Word ve Excel kaynaklı aramayı destekler. Yerel OCR isteğe bağlıdır; çıkarımlar doğrulama uyarısı taşır.",
     saved: "Kayıt kaydedildi", archived: "Kayıt güncellendi", aliases: "Diğer adlar (virgülle ayır)", agents: "İzinli ajanlar (virgülle ayır)",
     agentsHint: "Tüm, seçilen veya hiçbir asistana izin ver. İşçi ajanlara erişim anahtarı verilmez.",
     access: "Ajan erişimi", allAgents: "Tüm asistanlar", selectedAgents: "Seçilen asistanlar", noAgents: "Hiçbir asistan",
     uncategorized: "Koleksiyonsuz", recordCount: "kayıt", working: "Kaydediliyor…", previous: "Önceki", more: "Sonraki",
     notConfigured: "Özgün belgeler saklandı. Dizinleme için Igor bağlantısını yapılandır.", drop: "Kayıt eklemek için bir özgün dosya bırak",
     pending: "Sırada", processing: "Dizinleniyor", ready_keyword: "Sözcük araması hazır", needs_review: "İnceleme gerekli",
+    ready_ocr: "OCR · özgünü doğrula",
     failed: "Dizinleme başarısız", no_edition: "Sürüm yok", withdrawn: "Geri çekildi", archivedState: "Arşivlendi",
     reviewHint: "Bu sürümün çıkarımı inceleme gerektiriyor. Özgün belge açılabilir; yanıt kanıtı olarak kullanılmaz.",
     pendingHint: "Bu sürüm dizinlenmeyi bekliyor. Igor ile eşitlemek ve durumu görmek için yenile.",
     readyHint: "Bu sürüm, izinli ajanlar tarafından kaynaklı sözcük aramasıyla kullanılabilir.",
+    ocrHint: "Bu sürüm OCR çıkarımı içerir. Ajanlar doğrulama uyarısıyla kaynak gösterebilir; ayrıntıları özgün belgede doğrula.",
     reference: "Kaynak", academic_calendar: "Akademik takvim", syllabus: "Ders izlencesi", transcript: "Transkript",
     cafeteria_menu: "Yemekhane menüsü", book: "Kitap", confirmArchive: "Kayıt arşivlensin mi? Özgün belgeler ve sürümler korunacak.",
   },
@@ -230,7 +234,7 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
         {!record ? <p className="iacon-note">{c.select}</p> : <>
           <div className="iacon-kicker">{c.title}</div><h2>{record.document.title}</h2>
           <span className={"iacon-status " + record.index_status}>{stateLabel(record.index_status)}</span>
-          <p className="iacon-note">{record.index_status === "ready_keyword" ? c.readyHint : record.index_status === "needs_review" ? c.reviewHint : c.pendingHint}</p>
+          <p className="iacon-note">{record.index_status === "ready_keyword" ? c.readyHint : record.index_status === "ready_ocr" ? c.ocrHint : record.index_status === "needs_review" ? c.reviewHint : c.pendingHint}</p>
           {record.active_revision && <><a className="iacon-open" href={api.downloadLibraryRevisionUrl(record.active_revision.id, true)} target="_blank" rel="noopener noreferrer">{c.original} ↗</a>
             <dl><dt>{c.filename}</dt><dd>{record.active_revision.original_filename}</dd><dt>{c.size}</dt><dd>{api.fmtBytes(record.active_revision.size_bytes)}</dd>
               <dt>{c.issued}</dt><dd>{record.active_revision.issue_date || "—"}</dd><dt>{c.coverage}</dt><dd>{record.active_revision.coverage_start ? record.active_revision.coverage_start + " → " + record.active_revision.coverage_end : "—"}</dd>

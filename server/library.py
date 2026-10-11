@@ -6,6 +6,7 @@ their events commit together; staged upload receipts cover filesystem recovery.
 from __future__ import annotations
 
 import hashlib
+from contextlib import closing
 import json
 import logging
 import os
@@ -69,7 +70,7 @@ def bootstrap_library(vault_root):
         directory.mkdir(exist_ok=True)
         if root not in directory.resolve().parents:
             raise HTTPException(403, "Records storage escapes the vault")
-    with get_connection(vault_root) as conn:
+    with closing(get_connection(vault_root)) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")
         conn.executescript("""
@@ -107,7 +108,7 @@ def bootstrap_library(vault_root):
         """)
         # Crash remnants are retained for operator review; no blob is deleted here.
         conn.execute("UPDATE uploads SET state='interrupted' WHERE state IN ('staging','published')")
-        conn.execute("UPDATE index_receipts SET status='pending' WHERE status NOT IN ('pending','processing','ready_keyword','needs_review','failed')")
+        conn.execute("UPDATE index_receipts SET status='pending' WHERE status NOT IN ('pending','processing','ready_keyword','ready_ocr','needs_review','failed')")
         conn.commit()
         _enroll_legacy(vault_root, conn)
 
@@ -433,7 +434,7 @@ def set_index_receipt(conn, doc_id, rev_id, status):
     revision = get_revision(conn, rev_id)
     if revision is None or revision.document_id != doc_id:
         raise HTTPException(422, "Receipt edition does not belong to the record")
-    if status not in {"pending", "processing", "ready_keyword", "needs_review", "failed"}:
+    if status not in {"pending", "processing", "ready_keyword", "ready_ocr", "needs_review", "failed"}:
         raise HTTPException(422, "Unknown indexing status")
     conn.execute(
         "INSERT INTO index_receipts(document_id,revision_id,status,reported_at) VALUES(?,?,?,?) "

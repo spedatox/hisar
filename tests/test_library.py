@@ -118,6 +118,12 @@ def test_receipts_are_revision_scoped_and_reindex_is_durable(owner):
                           data={"document_id": first["document"]["id"], "revision_id": first["active_revision"]["id"],
                                 "sync_status": "ready_keyword"})
     assert response.status_code == 200
+    response = owner.post("/library/index-receipts", headers=SYNC,
+                          data={"document_id": first["document"]["id"], "revision_id": first["active_revision"]["id"],
+                                "sync_status": "ready_ocr"})
+    assert response.status_code == 200
+    records = owner.get("/library/documents").json()["records"]
+    assert next(r for r in records if r["document"]["id"] == first["document"]["id"])["index_status"] == "ready_ocr"
     assert owner.post(f"/library/documents/{first['document']['id']}/retry").status_code == 200
     assert owner.get("/library/events", headers=SYNC).json()["events"][-1]["event_type"] == "index_requested"
 
