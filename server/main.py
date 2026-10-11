@@ -43,10 +43,13 @@ async def lifespan(app: FastAPI):
     vault.bootstrap(settings.sandbox_root)
     from . import library
     library.bootstrap_library(settings.sandbox_root)
+    from .library_delivery import LibraryDelivery
+    app.state.library_delivery = LibraryDelivery(settings)
     for warning in settings.warnings():
         log.warning(warning)
     log.info("Vault ready at %s", settings.sandbox_root)
     yield
+    await app.state.library_delivery.aclose()
     if settings.drive_enabled:
         await get_drive().aclose()
 

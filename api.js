@@ -187,14 +187,24 @@ export function upload(path, file, { onProgress } = {}) {
 
 /* ── Library (IACON) ────────────────────────────────────────────────── */
 
-export const listLibrary = (includeArchived = false) => request("/library/documents", { params: { include_archived: includeArchived ? "true" : "false" } });
+export const listLibrary = (includeArchived = false, offset = 0) => request("/library/documents", { params: { include_archived: includeArchived, offset } });
 export const createLibraryDocument = (payload) => json("/library/documents", "POST", payload);
 export const updateLibraryDocument = (id, payload) => json(`/library/documents/${id}`, "PATCH", payload);
-export const purgeLibraryDocument = (id) => request(`/library/documents/${id}`, { method: "DELETE" });
+export const purgeLibraryDocument = (id, expectedVersion) => request(`/library/documents/${id}`, { method: "DELETE", params: { expected_version: expectedVersion } });
 export const listLibraryRevisions = (id) => request(`/library/documents/${id}/revisions`);
-export const downloadLibraryRevisionUrl = (id) => url(`/library/revisions/${id}/download`);
+export const downloadLibraryRevisionUrl = (id, inline = false) => url(`/library/revisions/${id}/download`, { inline });
+export const retryLibraryIndex = (id) => request(`/library/documents/${id}/retry`, { method: "POST" });
+export const refreshLibrary = () => request("/library/reconcile", { method: "POST" });
 
 export function uploadLibraryRevision(docId, file, { onProgress, ...metadata } = {}) {
+  return uploadLibraryForm(`/library/documents/${docId}/revisions`, file, { onProgress, ...metadata });
+}
+
+export function uploadLibraryRecord(file, options = {}) {
+  return uploadLibraryForm("/library/records", file, options);
+}
+
+function uploadLibraryForm(endpoint, file, { onProgress, ...metadata } = {}) {
   const xhr = new XMLHttpRequest();
   const promise = new Promise((resolve, reject) => {
     const form = new FormData();
@@ -203,7 +213,7 @@ export function uploadLibraryRevision(docId, file, { onProgress, ...metadata } =
       if (v) form.append(k, v);
     }
 
-    xhr.open("POST", url(`/library/documents/${docId}/revisions`));
+    xhr.open("POST", url(endpoint));
     xhr.withCredentials = true;
 
     xhr.upload.onprogress = (e) => {

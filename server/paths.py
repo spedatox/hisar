@@ -92,6 +92,9 @@ def resolve(root: Path, user_path: str | None, *, must_exist: bool = False) -> P
     """
     real_root = Path(os.path.realpath(root))
     rel = normalize(user_path).lstrip("/")
+    # Internal records/catalogs and retained trash are never generic vault paths.
+    if any(part.casefold() in {".hisar", ".trash"} for part in rel.split("/")):
+        raise PathError("internal vault storage is not accessible")
     candidate = real_root / rel if rel else real_root
 
     # Resolve as far as the filesystem allows; realpath() on a non-existent
@@ -101,6 +104,12 @@ def resolve(root: Path, user_path: str | None, *, must_exist: bool = False) -> P
 
     if resolved != real_root and real_root not in resolved.parents:
         raise PathError("path escapes the sandbox")
+
+    if any(part.casefold() in {".hisar", ".trash"} for part in resolved.relative_to(real_root).parts):
+        raise PathError("internal vault storage is not accessible")
+    relative_parts = tuple(part.casefold() for part in resolved.relative_to(real_root).parts)
+    if relative_parts[:2] == ("documents", "library"):
+        raise PathError("managed records must use the Hall of Records API")
 
     if must_exist and not resolved.exists():
         raise PathError("path does not exist")

@@ -1,25 +1,26 @@
-from typing import Optional, List, Dict, Any
-from datetime import datetime
-from pydantic import BaseModel, Field
-import uuid
+"""Typed catalog contracts for Iacon Hall of Records."""
+from datetime import date, datetime
+from typing import Literal
 
-# --- Core Catalog Records (Pydantic representations of SQLite rows) ---
+from pydantic import BaseModel, Field, model_validator
+
 
 class LibraryDocument(BaseModel):
     id: str
     title: str
-    aliases: List[str] = Field(default_factory=list)
-    category: Optional[str] = None
-    type: Optional[str] = None
-    institution: Optional[str] = None
-    subject: Optional[str] = None
-    active_revision_id: Optional[str] = None
-    access_policy: Dict[str, Any] = Field(default_factory=dict)
+    aliases: list[str] = Field(default_factory=list)
+    category: str | None = None
+    type: str | None = None
+    institution: str | None = None
+    subject: str | None = None
+    active_revision_id: str | None = None
+    access_policy: dict = Field(default_factory=dict)
     is_archived: bool = False
     is_tombstone: bool = False
     metadata_version: int = 1
     created_at: datetime
     updated_at: datetime
+
 
 class LibraryRevision(BaseModel):
     id: str
@@ -29,76 +30,97 @@ class LibraryRevision(BaseModel):
     original_filename: str
     mime_type: str
     size_bytes: int
-    issue_date: Optional[str] = None
-    coverage_start: Optional[str] = None
-    coverage_end: Optional[str] = None
-    term: Optional[str] = None
-    superseded_by: Optional[str] = None
+    issue_date: str | None = None
+    coverage_start: str | None = None
+    coverage_end: str | None = None
+    term: str | None = None
+    superseded_by: str | None = None
     created_at: datetime
+
 
 class LibraryEvent(BaseModel):
     sequence: int
     event_id: str
-    event_type: str  # e.g., 'document_created', 'revision_added', 'document_archived', 'document_purged'
+    event_type: str
     document_id: str
-    revision_id: Optional[str] = None
+    revision_id: str | None = None
     catalog_version: int
     created_at: datetime
+
 
 class LibraryIndexReceipt(BaseModel):
     document_id: str
     revision_id: str
-    status: str  # processing, ready, ready_keyword, failed
+    status: str
     reported_at: datetime
 
-# --- API Request/Response Models ---
 
 class CreateDocumentRequest(BaseModel):
-    title: str
-    type: Optional[str] = None
-    category: Optional[str] = None
-    aliases: List[str] = Field(default_factory=list)
-    institution: Optional[str] = None
-    subject: Optional[str] = None
-    access_policy: Dict[str, Any] = Field(default_factory=dict)
+    title: str = Field(min_length=1, max_length=240)
+    type: str | None = Field(default=None, max_length=100)
+    category: str | None = Field(default=None, max_length=200)
+    aliases: list[str] = Field(default_factory=list, max_length=30)
+    institution: str | None = Field(default=None, max_length=240)
+    subject: str | None = Field(default=None, max_length=240)
+    access_policy: dict = Field(default_factory=dict)
+
 
 class UpdateDocumentRequest(BaseModel):
-    expected_version: int
-    title: Optional[str] = None
-    type: Optional[str] = None
-    category: Optional[str] = None
-    aliases: Optional[List[str]] = None
-    institution: Optional[str] = None
-    subject: Optional[str] = None
-    access_policy: Optional[Dict[str, Any]] = None
-    active_revision_id: Optional[str] = None
-    is_archived: Optional[bool] = None
+    expected_version: int = Field(ge=1)
+    title: str | None = Field(default=None, min_length=1, max_length=240)
+    type: str | None = Field(default=None, max_length=100)
+    category: str | None = Field(default=None, max_length=200)
+    aliases: list[str] | None = Field(default=None, max_length=30)
+    institution: str | None = Field(default=None, max_length=240)
+    subject: str | None = Field(default=None, max_length=240)
+    access_policy: dict | None = None
+    active_revision_id: str | None = None
+    is_archived: bool | None = None
+
 
 class DocumentResponse(BaseModel):
     document: LibraryDocument
-    active_revision: Optional[LibraryRevision] = None
-    index_status: Optional[str] = None
+    active_revision: LibraryRevision | None = None
+    index_status: str = "no_edition"
+
+
+class CatalogRecord(DocumentResponse):
+    revisions: list[LibraryRevision] = Field(default_factory=list)
+
 
 class CreateRevisionMetadata(BaseModel):
-    issue_date: Optional[str] = None
-    coverage_start: Optional[str] = None
-    coverage_end: Optional[str] = None
-    term: Optional[str] = None
+    issue_date: date | None = None
+    coverage_start: date | None = None
+    coverage_end: date | None = None
+    term: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def coverage(self):
+        if bool(self.coverage_start) != bool(self.coverage_end):
+            raise ValueError("Both coverage dates are required")
+        if self.coverage_start and self.coverage_end < self.coverage_start:
+            raise ValueError("Coverage end precedes start")
+        return self
+
 
 class ResolveRequest(BaseModel):
-    document_ids: List[str]
-    agent_id: str
+    document_ids: list[str] = Field(max_length=100)
+    agent_id: str = Field(min_length=1, max_length=64)
+
 
 class ResolveResponseItem(BaseModel):
     document_id: str
-    active_revision_id: Optional[str]
+    active_revision_id: str | None = None
     access_granted: bool
-    is_archived: bool
+    is_archived: bool = False
+    record: DocumentResponse | None = None
+
 
 class ResolveResponse(BaseModel):
-    items: List[ResolveResponseItem]
+    items: list[ResolveResponseItem]
+
 
 class ManifestResponse(BaseModel):
-    events: List[LibraryEvent]
+    events: list[LibraryEvent]
     has_more: bool
     next_cursor: int

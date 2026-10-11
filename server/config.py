@@ -15,6 +15,7 @@ MACHINE_WRITE_SCOPES = ("/SPEDA", "/Forge")
 DEFAULT_TREE = (
     "Desktop",
     "Documents",
+    "Documents/Library",
     "Media",
     "Projects",
     "Transfers",
@@ -53,9 +54,13 @@ class Settings:
         self.machine_token = os.getenv("HISAR_MACHINE_TOKEN", "")
         self.library_sync_token = os.getenv("HISAR_LIBRARY_SYNC_TOKEN", "")
         self.library_reader_token = os.getenv("HISAR_LIBRARY_READER_TOKEN", "")
+        self.igor_url = os.getenv("HISAR_IGOR_URL", "http://app:8000")
+        self.igor_api_key = os.getenv("HISAR_IGOR_API_KEY", "")
+        self.igor_n8n_secret = os.getenv("HISAR_IGOR_N8N_SECRET", "")
 
         # ── limits ──
         self.max_upload_bytes = int(os.getenv("HISAR_MAX_UPLOAD_BYTES", str(2 * 1024**3)))
+        self.library_max_bytes = int(os.getenv("HISAR_LIBRARY_MAX_BYTES", str(25 * 1024**2)))
         self.login_rate_limit = int(os.getenv("HISAR_LOGIN_RATE_LIMIT", "8"))
         self.login_rate_window = int(os.getenv("HISAR_LOGIN_RATE_WINDOW", "300"))
 

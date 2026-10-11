@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
 import * as api from "./api.js";
+import HallOfRecords from "./HallOfRecords.jsx";
 import { DRIVE_MOUNT, isDrivePath } from "./api.js";
 
 const LanguageContext = createContext();
@@ -34,7 +35,7 @@ const useResponsive = () => {
 
 const TRANSLATIONS = {
   en: {
-    iacon: "IACON Library",
+    iacon: "Iacon Hall of Records",
 
     // Menubar
     about_reserve: "About This Reserve",
@@ -150,7 +151,7 @@ const TRANSLATIONS = {
     appName_subtitle: "Fast Communication Storage and Transfer Reserve",
   },
   tr: {
-    iacon: "IACON Kütüphanesi",
+    iacon: "Iacon Kayıtlar Salonu",
 
     // Menubar
     about_reserve: "Bu Rezerv Hakkında",
@@ -1260,6 +1261,7 @@ function WindowShell({ win, active, compact, title, toolbar, onFocus, onClose, o
 const SIDEBAR = [
   { glyph: "home", label: "Home", path: "/" },
   { glyph: "docs", label: "Documents", path: "/Documents" },
+  { glyph: "docs", label: "Iacon", path: "/Documents/Library" },
   { glyph: "media", label: "Media", path: "/Media" },
   { glyph: "projects", label: "Projects", path: "/Projects" },
   { glyph: "transfers", label: "Transfers", path: "/Transfers" },
@@ -1313,6 +1315,7 @@ function FinderWindow({ win, active, fs, loading, loadDir, notify, onError, driv
   useEffect(() => { loadDir(cwd); }, [cwd, loadDir]);
 
   const navigate = (path) => {
+    if (path === "/Documents/Library") { onNewFinder(path); return; }
     if (fs[path] && fs[path].type !== "dir") return;
     const h = [...history.slice(0, hi + 1), path];
     setHistory(h); setHi(h.length - 1); setCwd(path); setSel(new Set()); setAnchor(null); setQuery("");
@@ -1861,7 +1864,7 @@ function Spotlight({ fs, onClose, onOpen }) {
 /* ════════════════════════════════════════════════════════════════════════
    Dock
    ════════════════════════════════════════════════════════════════════════ */
-function Dock({ running, bouncing, minimized, onOpenFinder, onToggleTheme, onRestore }) {
+function Dock({ running, bouncing, minimized, onOpenFinder, onOpenIacon, onToggleTheme, onRestore }) {
   const { t } = useLanguage();
   const bp = useResponsive();
   const isMobile = bp === "phone" || bp === "tablet";
@@ -1871,6 +1874,7 @@ function Dock({ running, bouncing, minimized, onOpenFinder, onToggleTheme, onRes
 
   const apps = [
     { id: "finder", label: t("dock_finder"), icon: <IcFinder />, on: onOpenFinder },
+    { id: "iacon", label: t("iacon"), icon: <IaconIcon s={46} />, on: onOpenIacon },
     { id: "terminal", label: t("dock_terminal"), icon: <IcTerminal />, on: () => {} },
     { id: "textedit", label: t("dock_textedit"), icon: <IcTextEdit />, on: () => {} },
     { id: "settings", label: t("dock_appearance"), icon: <IcSettings />, on: onToggleTheme },
@@ -2185,7 +2189,7 @@ function Desktop({ theme, setTheme, user, onLogout }) {
     const id = idRef.current++;
     zRef.current += 1;
     setWindows((ws) => [...ws, {
-      id, kind: "finder", initPath,
+      id, kind: initPath === "/Documents/Library" ? "iacon" : "finder", initPath,
       x: isMobile ? 0 : Math.round((vw - w) / 2) + n * 28,
       y: isMobile ? MENUBAR_H : 72 + n * 28,
       w, h,
@@ -2258,12 +2262,13 @@ function Desktop({ theme, setTheme, user, onLogout }) {
   const running = useMemo(() => {
     const s = new Set();
     if (windows.some((w) => w.kind === "finder")) s.add("finder");
+    if (windows.some((w) => w.kind === "iacon")) s.add("iacon");
     if (windows.some((w) => w.kind === "textedit")) s.add("textedit");
     return s;
   }, [windows]);
 
   const minimized = useMemo(() => windows.filter((w) => w.minimized).map((w) => ({
-    id: w.id, kind: w.kind, title: w.kind === "finder" ? t("dock_finder") : baseName(w.path || "Untitled"),
+    id: w.id, kind: w.kind, title: w.kind === "iacon" ? t("iacon") : w.kind === "finder" ? t("dock_finder") : baseName(w.path || "Untitled"),
   })), [windows, t]);
 
   // global shortcuts
@@ -2301,7 +2306,13 @@ function Desktop({ theme, setTheme, user, onLogout }) {
 
       {toast && <div className={`toast ${toast.kind}`}>{toast.message}</div>}
 
-      {windows.map((w) => w.kind === "finder" ? (
+      {windows.map((w) => w.kind === "iacon" ? (
+        <WindowShell key={w.id} win={w} active={activeId === w.id} compact title={t("iacon")}
+          onFocus={() => focus(w.id)} onClose={() => closeWin(w.id)} onMinimize={() => minimize(w.id)}
+          onZoom={() => zoom(w.id)} onChange={(p) => change(w.id, p)}>
+          <HallOfRecords lang={lang} onError={handleError} notify={notify} />
+        </WindowShell>
+      ) : w.kind === "finder" ? (
         <FinderWindow key={w.id} win={w} active={activeId === w.id} fs={fs}
           loading={loading} loadDir={loadDir} notify={notify} onError={handleError}
           drive={drive} onLoadText={loadText}
@@ -2315,7 +2326,7 @@ function Desktop({ theme, setTheme, user, onLogout }) {
       ))}
 
       <Dock running={running} bouncing={bouncing} minimized={minimized}
-        onOpenFinder={dockFinder} onRestore={focus}
+        onOpenFinder={dockFinder} onOpenIacon={() => openFinder("/Documents/Library")} onRestore={focus}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")} />
 
       {spotlight && <Spotlight fs={fs} onClose={() => setSpotlight(false)} onOpen={spotOpen} />}

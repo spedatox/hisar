@@ -86,6 +86,8 @@ def rename(root: Path, vault_path: str, new_name: str) -> dict:
     src = resolve(root, vault_path, must_exist=True)
     if src == Path(os.path.realpath(root)):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cannot rename the vault root")
+    if src == (Path(os.path.realpath(root)) / "Documents"):
+        raise HTTPException(409, "This contains managed records; use Iacon Hall of Records")
     # Re-run the containment check on the destination: check_name() forbids
     # separators, but the resolve() chokepoint is what we actually trust.
     dst = resolve(root, to_vault_path(root, src.parent).rstrip("/") + "/" + check_name(new_name))
@@ -102,6 +104,8 @@ def move_to_trash(root: Path, vault_path: str) -> dict:
     real_root = Path(os.path.realpath(root))
     if src == real_root:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cannot delete the vault root")
+    if src == real_root / "Documents":
+        raise HTTPException(409, "This contains managed records; use Iacon Hall of Records")
 
     trash = real_root / TRASH_DIR
     trash.mkdir(exist_ok=True)

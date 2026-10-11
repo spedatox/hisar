@@ -10,11 +10,11 @@ from __future__ import annotations
 import mimetypes
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import vault
+from . import vault, library_vault
 from .auth import (Principal, authorize_write, current_principal, require_machine,
                    require_owner, require_reader)
 from .config import DRIVE_MOUNT, get_settings
@@ -70,6 +70,11 @@ class RenameBody(BaseModel):
 async def list_files(path: str = Query("/"), principal: Principal = Depends(require_reader)):
     p = normalize(path)
 
+    if library_vault.contains(p):
+        if not principal.is_owner:
+            raise HTTPException(403, "Managed records require owner or scoped library credentials")
+        return {"path": p, "provider": "library", "entries": library_vault.list_entries(_root(), p)}
+
     if is_drive_path(p):
         drive = get_drive()
         if not drive.connected:
@@ -99,6 +104,8 @@ async def list_files(path: str = Query("/"), principal: Principal = Depends(requ
 
 @router.post("/files/upload")
 async def upload_file(
+    request: Request,
+    background_tasks: BackgroundTasks,
     path: str = Query("/", description="Destination directory"),
     overwrite: bool = Query(False),
     file: UploadFile = File(...),
@@ -107,8 +114,10 @@ async def upload_file(
     p = normalize(path)
     authorize_write(principal, p)
     settings = get_settings()
-
-
+    if library_vault.contains(p):
+        import asyncio
+        background_tasks.add_task(request.app.state.library_delivery.notify)
+        return await asyncio.to_thread(library_vault.upload, _root(), p, file, overwrite=overwrite)
     if is_drive_path(p):
         if not principal.is_owner:
             raise HTTPException(status.HTTP_403_FORBIDDEN,
@@ -135,8 +144,11 @@ async def download_file(
 ):
     p = normalize(path)
     disposition = "inline" if inline else "attachment"
-
-
+    if library_vault.contains(p):
+        if not principal.is_owner:
+            raise HTTPException(403, "Managed records require owner or scoped library credentials")
+        import asyncio
+        return await asyncio.to_thread(library_vault.original, _root(), p, inline=inline)
     if is_drive_path(p):
         drive = get_drive()
         entry, filename, stream = await drive.download(p)
@@ -165,8 +177,8 @@ async def download_file(
 async def make_dir(body: MkdirBody, principal: Principal = Depends(current_principal)):
     p = normalize(body.path)
     authorize_write(principal, p)
-
-
+    if library_vault.contains(p):
+        raise HTTPException(409, "Create collections in Iacon Hall of Records")
     if is_drive_path(p):
         if not principal.is_owner:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Machine credentials cannot write to Google Drive.")
@@ -179,8 +191,8 @@ async def make_dir(body: MkdirBody, principal: Principal = Depends(current_princ
 @router.post("/files/rename")
 async def rename_entry(body: RenameBody, principal: Principal = Depends(require_owner)):
     p = normalize(body.path)
-
-
+    if library_vault.protects_container(p):
+        raise HTTPException(409, "This contains managed records; use Iacon Hall of Records")
     if is_drive_path(p):
         entry = await get_drive().rename(p, body.name)
         return _drive_entry_to_json(entry, parent_of(p))
@@ -191,8 +203,8 @@ async def rename_entry(body: RenameBody, principal: Principal = Depends(require_
 @router.delete("/files/delete")
 async def delete_entry(path: str = Query(...), principal: Principal = Depends(require_owner)):
     p = normalize(path)
-
-
+    if library_vault.protects_container(p):
+        raise HTTPException(409, "This contains managed records; use Iacon Hall of Records")
     if is_drive_path(p):
         await get_drive().delete(p)
         return {"trashed": p, "provider": "drive"}
