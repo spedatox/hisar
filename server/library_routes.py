@@ -1,5 +1,7 @@
 """Thin, authenticated owner and ingestion doors to the Hall of Records."""
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, Request, UploadFile, HTTPException
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Path, Query, Request, UploadFile, HTTPException
 
 from . import library
 from .auth import Principal, require_owner, require_library_reader, require_library_sync
@@ -7,6 +9,38 @@ from .config import get_settings
 from .library_models import CreateDocumentRequest, UpdateDocumentRequest, ResolveRequest, LibrarySettingsUpdate, LibraryProgressRequest
 
 router = APIRouter(prefix="/library", tags=["library"])
+IncidentId = Annotated[str, Path(pattern=r"^[a-f0-9]{32}$")]
+
+
+@router.get("/incidents")
+async def incident_list(request: Request, reviewed: bool = False,
+                        severity: Literal["critical", "error", "warning", "test"] | None = None,
+                        q: str = Query("", max_length=120), offset: int = Query(0, ge=0),
+                        principal=Depends(require_owner)):
+    params = {"reviewed": reviewed, "q": q, "offset": offset}
+    if severity:
+        params["severity"] = severity
+    return await request.app.state.library_delivery.incident("GET", params=params)
+
+
+@router.get("/incidents/{identity}")
+async def incident_detail(identity: IncidentId, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.incident("GET", f"/{identity}")
+
+
+@router.put("/incidents/{identity}/review")
+async def incident_review(identity: IncidentId, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.incident("PUT", f"/{identity}/review")
+
+
+@router.post("/incidents/{identity}/assessment")
+async def incident_assessment(identity: IncidentId, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.incident("POST", f"/{identity}/assessment")
+
+
+@router.get("/incidents/{identity}/pdf")
+async def incident_pdf(identity: IncidentId, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.incident("GET", f"/{identity}/pdf", pdf=True)
 
 
 def get_db():

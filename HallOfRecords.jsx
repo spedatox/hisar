@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api.js";
 import IaconSettings from "./IaconSettings.jsx";
+import IncidentJournal from "./IncidentJournal.jsx";
 import "./iacon.css";
 
 const copy = {
@@ -69,7 +70,7 @@ const csv = (value) => (value || "").split(",").map((s) => s.trim()).filter(Bool
 const blank = { title: "", category: "", doc_type: "reference", institution: "", aliases: "", agents: "", access_mode: "all",
                 issue_date: "", coverage_start: "", coverage_end: "", term: "" };
 
-export default function HallOfRecords({ lang = "en", onError, notify }) {
+export default function HallOfRecords({ lang = "en", onError, notify, initialJournal = false, initialIncident = null }) {
   const c = copy[lang] || copy.en;
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +88,7 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
   const [dragging, setDragging] = useState(false);
   const [page, setPage] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(initialJournal);
   const [indexing, setIndexing] = useState({});
   const [engineError, setEngineError] = useState("");
   const [retrying, setRetrying] = useState(null);
@@ -251,11 +253,15 @@ export default function HallOfRecords({ lang = "en", onError, notify }) {
   const stateLabel = (state) => state === "archived" ? c.archivedState : state === "not_synced" ? (lang === "tr" ? "Eşitleme bekliyor" : "Awaiting sync") : state === "retry_wait" ? (lang === "tr" ? "Yeniden deneme bekliyor" : "Waiting to retry") : c[state] || state;
   const counts = { active: records.filter((r) => !r.document.is_archived).length };
 
+  if (journalOpen) return <IncidentJournal lang={lang} initialIncident={initialIncident}
+    onClose={() => setJournalOpen(false)} onError={onError} />;
+
   return <div className="iacon" onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
     onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}
     onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy && !editing && e.dataTransfer.files[0]) start("new", e.dataTransfer.files[0]); }}>
     <header className="iacon-header"><div className="iacon-brand"><span className="iacon-optimus-logo" aria-hidden="true" /><div><div className="iacon-kicker">IACON</div><h1>{c.hall}</h1><p>{c.subtitle}</p></div></div>
-      <div className="iacon-actions"><button onClick={() => setSettingsOpen((open) => !open)}>{lang === "tr" ? "Ayarlar" : "Settings"}</button><button disabled={loading || busy} onClick={() => reload(true)}>{c.refresh}</button>
+      <div className="iacon-actions"><button onClick={() => setJournalOpen(true)}>{lang === "tr" ? "Olay Günlüğü" : "Incident Journal"}</button>
+        <button onClick={() => setSettingsOpen((open) => !open)}>{lang === "tr" ? "Ayarlar" : "Settings"}</button><button disabled={loading || busy} onClick={() => reload(true)}>{c.refresh}</button>
         <button className="primary" disabled={busy} onClick={() => start("new")}>+ {c.new}</button></div></header>
     {(error || engineError) && <div className="iacon-alert" role="alert">{error || engineError}</div>}
     {settingsOpen ? <IaconSettings lang={lang} onClose={() => setSettingsOpen(false)} onSaved={() => reload()} onError={onError} /> : <div className="iacon-layout">

@@ -4,7 +4,7 @@ FROM node:20-slim AS client
 WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY index.html vite.config.js main.jsx hisar.jsx api.js HallOfRecords.jsx IaconSettings.jsx iacon.css ./
+COPY index.html vite.config.js main.jsx hisar.jsx api.js HallOfRecords.jsx IncidentJournal.jsx IaconSettings.jsx iacon.css ./
 COPY public/ ./public/
 COPY pwa/ ./pwa/
 # VITE_API_BASE stays empty: the API and the client are served from the same
