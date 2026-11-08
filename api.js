@@ -198,6 +198,11 @@ export const refreshLibrary = () => request("/library/reconcile", { method: "POS
 export const getLibrarySettings = () => request("/library/settings");
 export const saveLibrarySettings = (values) => json("/library/settings", "PUT", values);
 export const getLibraryProgress = (documentIds) => json("/library/progress", "POST", { document_ids: documentIds });
+export const listIncidents = (params, signal) => request("/library/incidents", { params, signal });
+export const getIncident = (id, signal) => request(`/library/incidents/${id}`, { signal });
+export const markIncidentReviewed = (id) => request(`/library/incidents/${id}/review`, { method: "PUT" });
+export const assessIncident = (id) => request(`/library/incidents/${id}/assessment`, { method: "POST" });
+export const incidentPdfUrl = (id) => url(`/library/incidents/${id}/pdf`);
 
 export function uploadLibraryRevision(docId, file, { onProgress, ...metadata } = {}) {
   return uploadLibraryForm(`/library/documents/${docId}/revisions`, file, { onProgress, ...metadata });

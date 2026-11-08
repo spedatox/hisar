@@ -2102,6 +2102,14 @@ function Desktop({ theme, setTheme, user, onLogout }) {
     } catch (err) { handleError(err); }
   }, [refreshDrive, loadDir, notify, t, handleError]);
   const [windows, setWindows] = useState(() => {
+    const route = new URLSearchParams(window.location.hash.slice(1));
+    const incident = route.get("incident");
+    const validIncident = incident && /^[a-f0-9]{32}$/.test(incident);
+    if (route.has("incident-journal") || validIncident) {
+      const w = isMobile ? vw : Math.min(vw, 1000), h = isMobile ? vh - MENUBAR_H : 620;
+      return [{ id: 1, kind: "iacon", initialJournal: true, initialIncident: validIncident ? incident : null, x: Math.round((vw - w) / 2),
+        y: isMobile ? MENUBAR_H : 72, w, h, z: 10, minimized: false, maximized: isMobile }];
+    }
     const w = 880, h = 560;
     return [{ id: 1, kind: "finder", initPath: "/", x: Math.round((vw - w) / 2), y: 72, w, h, z: 10, minimized: false, maximized: false }];
   });
@@ -2311,7 +2319,8 @@ function Desktop({ theme, setTheme, user, onLogout }) {
         <WindowShell key={w.id} win={w} active={activeId === w.id} compact title={t("iacon")}
           onFocus={() => focus(w.id)} onClose={() => closeWin(w.id)} onMinimize={() => minimize(w.id)}
           onZoom={() => zoom(w.id)} onChange={(p) => change(w.id, p)}>
-          <HallOfRecords lang={lang} onError={handleError} notify={notify} />
+          <HallOfRecords lang={lang} onError={handleError} notify={notify}
+            initialJournal={w.initialJournal} initialIncident={w.initialIncident} />
         </WindowShell>
       ) : w.kind === "finder" ? (
         <FinderWindow key={w.id} win={w} active={activeId === w.id} fs={fs}

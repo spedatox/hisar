@@ -3,6 +3,7 @@ import logging
 
 import httpx
 from fastapi import HTTPException
+from fastapi.responses import Response
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +52,24 @@ class LibraryDelivery:
         if result.get("status") == "unconfigured":
             raise HTTPException(503, "Igor cannot connect to the Hisar catalog. Your retry request is saved; configure Igor's Hisar library tokens.")
         return {**result, "document_id": doc_id, "message": "Retry accepted. Watch the indexing status for completion."}
+
+    async def incident(self, method, suffix="", *, params=None, pdf=False):
+        if not self.url or not self.headers["X-API-Key"]:
+            raise HTTPException(503, "The Hall is not connected to the SPEDA incident journal")
+        try:
+            upstream = await self.http.request(method, self.url + "/iacon/hall-of-records/incidents" + suffix,
+                headers={"X-API-Key": self.headers["X-API-Key"]}, params=params, timeout=55)
+        except httpx.HTTPError as exc:
+            raise HTTPException(503, "The SPEDA incident journal is unavailable") from exc
+        if upstream.status_code == 404:
+            raise HTTPException(404, "Incident not found")
+        expected = "application/pdf" if pdf else "application/json"
+        if upstream.status_code != 200 or upstream.headers.get("content-type", "").split(";")[0] != expected:
+            raise HTTPException(503, "The SPEDA incident journal is unavailable")
+        headers = {"Cache-Control": "no-store"}
+        if pdf:
+            headers["Content-Disposition"] = f'attachment; filename="damage-control-{suffix.split("/")[1]}.pdf"'
+        return Response(upstream.content, media_type=expected, headers=headers)
 
     async def aclose(self):
         await self.http.aclose()

@@ -4,14 +4,44 @@ import json
 from pathlib import Path
 
 import pytest
+import httpx
 from fastapi import HTTPException
 
-from .test_api import client, owner
+from .test_api import MACHINE, PASSWORD, client, owner
 from server import library
 from server.config import get_settings
 
 SYNC = {"X-Library-Sync-Token": "isolated-sync"}
 READER = {"X-Library-Reader-Token": "isolated-reader"}
+
+
+def test_incident_journal_proxies_only_owner_requests(client, monkeypatch):
+    delivery = client.app.state.library_delivery
+    delivery.headers["X-API-Key"] = "isolated-upstream-key"
+    calls = []
+    identity = "a" * 32
+
+    async def request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if url.endswith("/pdf"):
+            return httpx.Response(200, headers={"Content-Type": "application/pdf"}, content=b"%PDF-1.7")
+        return httpx.Response(200, json={"incidents": []})
+
+    monkeypatch.setattr(delivery.http, "request", request)
+    assert client.get("/library/incidents").status_code == 401
+    assert client.get("/library/incidents", headers=MACHINE).status_code == 403
+    assert client.post(f"/library/incidents/{identity}/assessment", headers=READER).status_code == 401
+    assert not calls
+
+    assert client.post("/auth/login", json={"password": PASSWORD}).status_code == 200
+    assert client.get("/library/incidents", params={"severity": "warning", "offset": 30}).json() == {"incidents": []}
+    assert calls[-1][1].endswith("/iacon/hall-of-records/incidents")
+    assert calls[-1][2]["headers"] == {"X-API-Key": "isolated-upstream-key"}
+    assert calls[-1][2]["params"]["offset"] == 30
+    assert client.get("/library/incidents/invalid").status_code == 422
+    export = client.get(f"/library/incidents/{identity}/pdf")
+    assert export.content == b"%PDF-1.7"
+    assert export.headers["cache-control"] == "no-store"
 
 
 @pytest.fixture(autouse=True)
