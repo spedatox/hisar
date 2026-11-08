@@ -6,6 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY index.html vite.config.js main.jsx hisar.jsx api.js HallOfRecords.jsx IaconSettings.jsx iacon.css ./
 COPY public/ ./public/
+COPY pwa/ ./pwa/
 # VITE_API_BASE stays empty: the API and the client are served from the same
 # origin, so relative paths are correct and no CORS is involved.
 RUN npm run build

@@ -1,0 +1,29 @@
+.install-dialog {
+  width: min(26rem, calc(100% - 48px));
+  max-height: calc(100% - 48px);
+  margin: auto;
+  padding: 24px;
+  border: 1px solid #355164;
+  border-radius: 20px;
+  color: #edf6fa;
+  background: #101d2a;
+  box-shadow: 0 24px 80px #05091380;
+  font: 1rem/1.55 system-ui, sans-serif;
+}
+.install-dialog::backdrop { background: #050913bf; }
+.install-dialog img { display: block; margin-bottom: 14px; }
+.install-dialog h2 { margin: 0 0 8px; font-size: 1.35rem; }
+.install-dialog p { margin: 0 0 20px; color: #bacbd7; }
+.install-dialog button {
+  min-height: 44px;
+  padding: 8px 20px;
+  border: 0;
+  border-radius: 10px;
+  color: #0a1a24;
+  background: #91def0;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.install-dialog button:hover { background: #b3ecf7; }
+.install-dialog button:focus-visible { outline: 2px solid #d0f5ff; outline-offset: 4px; }

@@ -7,3 +7,9 @@ createRoot(document.getElementById("root")).render(
     <App />
   </StrictMode>
 );
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch((error) => {
+    console.warn("Hisar could not enable offline navigation.", error);
+  });
+}

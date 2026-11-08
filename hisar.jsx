@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, createContext, useCo
 import * as api from "./api.js";
 import HallOfRecords from "./HallOfRecords.jsx";
 import { DRIVE_MOUNT, isDrivePath } from "./api.js";
+import { InstallAppButton, InstallAppProvider } from "./pwa/InstallApp.jsx";
 
 const LanguageContext = createContext();
 export const useLanguage = () => useContext(LanguageContext);
@@ -39,6 +40,10 @@ const TRANSLATIONS = {
 
     // Menubar
     about_reserve: "About This Reserve",
+    install_hisar: "Install Hisar",
+    install_ios: "Open the Share menu and tap Add to Home Screen. If you see Open as Web App, leave it on, then tap Add.",
+    install_mac: "In Safari, choose File, then Add to Dock. Select Add to install Hisar.",
+    install_done: "Done",
     system_settings: "System Settings…",
     lock_screen: "Lock Screen",
     log_out: "Log Out",
@@ -155,6 +160,10 @@ const TRANSLATIONS = {
 
     // Menubar
     about_reserve: "Bu Rezerv Hakkında",
+    install_hisar: "Hisar’ı Yükle",
+    install_ios: "Paylaş menüsünü açıp Ana Ekrana Ekle’ye dokunun. Web Uygulaması Olarak Aç seçeneği varsa açık bırakıp Ekle’ye dokunun.",
+    install_mac: "Safari’de Dosya menüsünden Dock’a Ekle’yi seçin. Hisar’ı yüklemek için Ekle’ye tıklayın.",
+    install_done: "Bitti",
     system_settings: "Sistem Ayarları…",
     lock_screen: "Ekranı Kilitle",
     log_out: "Çıkış Yap",
@@ -540,7 +549,10 @@ const css = `
   --accent:#36abca;
   font-family:var(--font);
   -webkit-font-smoothing:antialiased;
-  position:fixed; inset:0; overflow:hidden;
+  position:fixed;
+  inset:env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  overflow:hidden;
 }
 /* SPEDA Mark VI — fluid-glass FUI. Liquid glass = whisper-white fill + deep
    frost + lit cyan rim + specular catch. Cyan accent; amber = folders /
@@ -600,7 +612,7 @@ const css = `
   display:flex;align-items:center;gap:2px;padding:0 10px;color:var(--txt);
   background:var(--mat-bar);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
   border-bottom:.5px solid var(--sep);font-size:13px;}
-.mb-brand{font-weight:700;font-size:14px;letter-spacing:.16em;padding:3px 11px 3px 12px;border-radius:5px;cursor:default;
+.mb-brand{font:inherit;font-weight:700;font-size:14px;letter-spacing:.16em;padding:3px 11px 3px 12px;border:0;border-radius:5px;background:none;cursor:pointer;
   color:var(--mb-brand-color);text-shadow:0 0 12px color-mix(in srgb,var(--mb-brand-color) 60%,transparent);}
 .mb-brand:hover,.mb-brand.open{background:var(--ctl-h);}
 .mb-item{padding:3px 9px;border-radius:5px;cursor:default;white-space:nowrap;line-height:1;font-weight:500;letter-spacing:.04em;}
@@ -620,6 +632,7 @@ const css = `
   animation:menuIn .11s ease;color:var(--txt);font-size:13px;}
 @keyframes menuIn{from{opacity:0;transform:translateY(-4px) scale(.99);}to{opacity:1;transform:none;}}
 .menu-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:5px 9px;border-radius:6px;cursor:default;}
+.menu-install{width:100%;min-height:34px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;}
 .menu-row:hover{background:var(--accent);color:#fff;}
 .menu-row.disabled{opacity:.38;}
 .menu-row.disabled:hover{background:transparent;color:var(--txt);}
@@ -837,9 +850,13 @@ const css = `
 .login-go:hover{background:#fff;}
 .login-hint{color:rgba(255,255,255,.7);font-size:12px;height:16px;}
 .login-err{color:#ff6b6b;font-size:12px;height:16px;font-family:var(--mono);}
-.login-brand{position:absolute;bottom:6vh;display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff;}
+.login-brand{position:absolute;bottom:6vh;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 16px;text-align:center;color:#fff;}
 .login-brand .n{font-size:15px;font-weight:600;letter-spacing:.5px;text-shadow:0 1px 8px rgba(0,0,0,.5);}
 .login-brand .s{font-size:11px;font-family:var(--mono);letter-spacing:2px;text-transform:uppercase;opacity:.65;}
+.login-install{min-height:44px;margin-top:8px;padding:0 15px;border:1px solid #8dd9eb80;border-radius:10px;
+  color:#e5f8ff;background:#101d2a;font:600 13px var(--font);cursor:pointer;}
+.login-install:hover{background:#1b3546;}
+.login-install:focus-visible,.menu-install:focus-visible,.mb-brand:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px;}
 .shake{animation:shake .35s;}
 @keyframes shake{0%,100%{transform:translateX(0);}20%,60%{transform:translateX(-7px);}40%,80%{transform:translateX(7px);}}
 
@@ -1056,6 +1073,13 @@ const css = `
   .mb-brand{font-size:10px;}
   .login-clock .t{font-size:38px;}
 }
+
+@media (max-height:530px){
+  .login{position:relative;min-height:100%;height:100%;justify-content:safe center;gap:20px;padding:16px;overflow-y:auto;}
+  .login-clock,.login-brand{position:static;}
+  .login-clock .t{font-size:38px;}
+  .login-av{width:54px;height:54px;font-size:24px;}
+}
 `;
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1099,6 +1123,7 @@ function MenuBar({ user, theme, onToggleTheme, onLogout, onNewFinder, onAbout, o
     apple: (
       <div className="menu" style={{ left: 10 }}>
         <Row label={t("about_reserve")} on={onAbout} />
+        <InstallAppButton className="menu-row menu-install" />
         <Sep />
         <Row label={t("system_settings")} disabled />
         <Sep />
@@ -1152,9 +1177,10 @@ function MenuBar({ user, theme, onToggleTheme, onLogout, onNewFinder, onAbout, o
 
   return (
     <div className="menubar" ref={ref}>
-      <span className={`mb-brand${open === "apple" ? " open" : ""}`}
-        onMouseDown={(e) => { e.stopPropagation(); setOpen(open === "apple" ? null : "apple"); }}
-        onMouseEnter={() => open && setOpen("apple")}>H.İ.S.A.R.</span>
+      <button type="button" className={`mb-brand${open === "apple" ? " open" : ""}`}
+        aria-expanded={open === "apple"}
+        onClick={() => setOpen(open === "apple" ? null : "apple")}
+        onMouseEnter={() => open && setOpen("apple")}>H.İ.S.A.R.</button>
       {item("file", t("file"))}
       {item("edit", t("edit"))}
       {item("view", t("view"))}
@@ -1995,6 +2021,7 @@ function Login({ theme, user, onLogin }) {
         <div className="login-brand">
           <div className="n">H.İ.S.A.R.</div>
           <div className="s">{t("appName_subtitle")}</div>
+          <InstallAppButton className="login-install" />
         </div>
       </div>
     </div>
@@ -2370,23 +2397,21 @@ export default function App() {
 
   const value = useMemo(() => ({ lang, setLang, t }), [lang, t]);
 
-  // Hold the boot frame until the session check lands, so a logged-in owner
-  // never sees the lock screen flash on refresh.
-  if (!booted) return (
-    <div className="os" data-theme={theme}>
-      <style>{css}</style>
-      <div className="wallpaper" />
-    </div>
-  );
-
-  if (!user) return (
-    <LanguageContext.Provider value={value}>
-      <Login theme={theme} user={USERNAME} onLogin={() => setUser(USERNAME)} />
-    </LanguageContext.Provider>
-  );
+  // Keep the install listener active while checking the session.
   return (
     <LanguageContext.Provider value={value}>
-      <Desktop theme={theme} setTheme={setTheme} user={user} onLogout={() => setUser(null)} />
+      <InstallAppProvider t={t}>
+        {!booted ? (
+          <div className="os" data-theme={theme}>
+            <style>{css}</style>
+            <div className="wallpaper" />
+          </div>
+        ) : user ? (
+          <Desktop theme={theme} setTheme={setTheme} user={user} onLogout={() => setUser(null)} />
+        ) : (
+          <Login theme={theme} user={USERNAME} onLogin={() => setUser(USERNAME)} />
+        )}
+      </InstallAppProvider>
     </LanguageContext.Provider>
   );
 }

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -7,8 +8,22 @@ import react from "@vitejs/plugin-react";
 const API = process.env.HISAR_DEV_API || "http://127.0.0.1:8600";
 const proxied = ["/auth", "/files", "/deposit", "/drive", "/health"];
 
+const pwa = {
+  name: "hisar-offline",
+  apply: "build",
+  generateBundle() {
+    const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+    const offlinePage = read("./pwa/offline.html").replace("<!-- HISAR_MARK -->", () => read("./public/hisar-mark.svg"));
+    this.emitFile({
+      type: "asset",
+      fileName: "sw.js",
+      source: `const OFFLINE_PAGE = ${JSON.stringify(offlinePage)};\n${read("./pwa/sw.js")}`,
+    });
+  },
+};
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), pwa],
   server: {
     host: true,
     proxy: Object.fromEntries(
