@@ -2,6 +2,7 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Path, Query, Request, UploadFile, HTTPException
+from pydantic import BaseModel, Field, StringConstraints
 
 from . import library
 from .auth import Principal, require_owner, require_library_reader, require_library_sync
@@ -10,17 +11,32 @@ from .library_models import CreateDocumentRequest, UpdateDocumentRequest, Resolv
 
 router = APIRouter(prefix="/library", tags=["library"])
 IncidentId = Annotated[str, Path(pattern=r"^[a-f0-9]{32}$")]
+IncidentSeverity = Literal["critical", "error", "warning", "test"]
+
+
+class IncidentExport(BaseModel):
+    ids: list[Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{32}$")]] | None = Field(
+        default=None, min_length=1, max_length=1000)
+    reviewed: bool = False
+    severity: IncidentSeverity | None = None
+    q: str = Field("", max_length=120)
 
 
 @router.get("/incidents")
 async def incident_list(request: Request, reviewed: bool = False,
-                        severity: Literal["critical", "error", "warning", "test"] | None = None,
+                        severity: IncidentSeverity | None = None,
                         q: str = Query("", max_length=120), offset: int = Query(0, ge=0),
                         principal=Depends(require_owner)):
     params = {"reviewed": reviewed, "q": q, "offset": offset}
     if severity:
         params["severity"] = severity
     return await request.app.state.library_delivery.incident("GET", params=params)
+
+
+@router.post("/incidents/export")
+async def export_incidents(body: IncidentExport, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.incident("POST", "/export",
+        payload=body.model_dump(exclude_none=True), pdf=True)
 
 
 @router.get("/incidents/{identity}")

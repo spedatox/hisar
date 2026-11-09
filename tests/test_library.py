@@ -23,13 +23,14 @@ def test_incident_journal_proxies_only_owner_requests(client, monkeypatch):
 
     async def request(method, url, **kwargs):
         calls.append((method, url, kwargs))
-        if url.endswith("/pdf"):
+        if url.endswith(("/pdf", "/export")):
             return httpx.Response(200, headers={"Content-Type": "application/pdf"}, content=b"%PDF-1.7")
         return httpx.Response(200, json={"incidents": []})
 
     monkeypatch.setattr(delivery.http, "request", request)
     assert client.get("/library/incidents").status_code == 401
     assert client.get("/library/incidents", headers=MACHINE).status_code == 403
+    assert client.post("/library/incidents/export", json={}).status_code == 401
     assert client.post(f"/library/incidents/{identity}/assessment", headers=READER).status_code == 401
     assert not calls
 
@@ -42,6 +43,10 @@ def test_incident_journal_proxies_only_owner_requests(client, monkeypatch):
     export = client.get(f"/library/incidents/{identity}/pdf")
     assert export.content == b"%PDF-1.7"
     assert export.headers["cache-control"] == "no-store"
+    bulk = client.post("/library/incidents/export", json={"ids": [identity]})
+    assert bulk.content == b"%PDF-1.7"
+    assert 'damage-control-journal.pdf' in bulk.headers["content-disposition"]
+    assert calls[-1][2]["json"]["ids"] == [identity]
 
 
 @pytest.fixture(autouse=True)

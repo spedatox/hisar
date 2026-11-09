@@ -53,22 +53,30 @@ class LibraryDelivery:
             raise HTTPException(503, "Igor cannot connect to the Hisar catalog. Your retry request is saved; configure Igor's Hisar library tokens.")
         return {**result, "document_id": doc_id, "message": "Retry accepted. Watch the indexing status for completion."}
 
-    async def incident(self, method, suffix="", *, params=None, pdf=False):
+    async def incident(self, method, suffix="", *, params=None, payload=None, pdf=False):
         if not self.url or not self.headers["X-API-Key"]:
             raise HTTPException(503, "The Hall is not connected to the SPEDA incident journal")
         try:
             upstream = await self.http.request(method, self.url + "/iacon/hall-of-records/incidents" + suffix,
-                headers={"X-API-Key": self.headers["X-API-Key"]}, params=params, timeout=55)
+                headers={"X-API-Key": self.headers["X-API-Key"]}, params=params, json=payload,
+                timeout=120 if suffix == "/export" else 55)
         except httpx.HTTPError as exc:
             raise HTTPException(503, "The SPEDA incident journal is unavailable") from exc
         if upstream.status_code == 404:
-            raise HTTPException(404, "Incident not found")
+            raise HTTPException(404, "No incidents match this export" if suffix == "/export" else "Incident not found")
+        if suffix == "/export" and upstream.status_code == 422:
+            try:
+                detail = upstream.json().get("detail")
+            except (ValueError, AttributeError):
+                detail = None
+            raise HTTPException(422, detail if isinstance(detail, str) else "Check the export selection")
         expected = "application/pdf" if pdf else "application/json"
         if upstream.status_code != 200 or upstream.headers.get("content-type", "").split(";")[0] != expected:
             raise HTTPException(503, "The SPEDA incident journal is unavailable")
         headers = {"Cache-Control": "no-store"}
         if pdf:
-            headers["Content-Disposition"] = f'attachment; filename="damage-control-{suffix.split("/")[1]}.pdf"'
+            name = "journal" if suffix == "/export" else suffix.split("/")[1]
+            headers["Content-Disposition"] = f'attachment; filename="damage-control-{name}.pdf"'
         return Response(upstream.content, media_type=expected, headers=headers)
 
     async def aclose(self):

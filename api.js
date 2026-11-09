@@ -203,6 +203,24 @@ export const getIncident = (id, signal) => request(`/library/incidents/${id}`, {
 export const markIncidentReviewed = (id) => request(`/library/incidents/${id}/review`, { method: "PUT" });
 export const assessIncident = (id) => request(`/library/incidents/${id}/assessment`, { method: "POST" });
 export const incidentPdfUrl = (id) => url(`/library/incidents/${id}/pdf`);
+export async function exportIncidents(payload) {
+  const response = await fetch(url("/library/incidents/export"), {
+    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new ApiError(error.detail || response.statusText, response.status);
+  }
+  const download = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = download;
+  link.download = "damage-control-journal.pdf";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(download), 1000);
+}
 
 export function uploadLibraryRevision(docId, file, { onProgress, ...metadata } = {}) {
   return uploadLibraryForm(`/library/documents/${docId}/revisions`, file, { onProgress, ...metadata });

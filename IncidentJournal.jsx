@@ -14,6 +14,9 @@ const copy = {
     interrupted: "The assessment was interrupted.", review: "Mark reviewed", pdf: "Export PDF", copyLink: "Copy incident link",
     copied: "Incident link copied.", history: "Recent occurrences", previous: "Previous", next: "Next",
     noSource: "SPEDA runtime", titleFallback: "Incident", failed: "Could not load the incident journal.",
+    exportSelected: "Export selected", exportMatching: "Export all matching", selectPage: "Select page",
+    clearSelection: "Clear selection", exporting: "Preparing PDF…", selectForExport: "Select for PDF export",
+    diagnostic: "Recorded error", nextCheck: "Next check", stack: "Stack locations",
   },
   tr: {
     title: "Olay Günlüğü", subtitle: "Tüm ajanların SPEDA işletim kayıtları", back: "Belge kataloğu",
@@ -27,6 +30,9 @@ const copy = {
     interrupted: "Değerlendirme kesildi.", review: "İncelendi olarak işaretle", pdf: "PDF indir", copyLink: "Olay bağlantısını kopyala",
     copied: "Olay bağlantısı kopyalandı.", history: "Son tekrarlar", previous: "Önceki", next: "Sonraki",
     noSource: "SPEDA çalışma zamanı", titleFallback: "Olay", failed: "Olay günlüğü yüklenemedi.",
+    exportSelected: "Seçilenleri indir", exportMatching: "Eşleşenlerin tümünü indir", selectPage: "Sayfayı seç",
+    clearSelection: "Seçimi temizle", exporting: "PDF hazırlanıyor…", selectForExport: "PDF için seç",
+    diagnostic: "Kaydedilen hata", nextCheck: "Sonraki kontrol", stack: "Çağrı konumları",
   },
 };
 
@@ -48,10 +54,32 @@ export default function IncidentJournal({ lang, initialIncident, onClose, onErro
   const [detailError, setDetailError] = useState("");
   const [working, setWorking] = useState("");
   const [notice, setNotice] = useState("");
+  const [exportIds, setExportIds] = useState(() => new Set());
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const date = (value) => new Date(value).toLocaleString(lang === "tr" ? "tr-TR" : "en-GB", {
     dateStyle: "medium", timeStyle: "short",
   });
   const select = (identity) => { setSelected(identity); setDetailError(""); setNotice(""); };
+  const toggleExport = (id) => setExportIds((previous) => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+
+  const download = async (selection) => {
+    setExporting(true);
+    setExportError("");
+    try {
+      await api.exportIncidents(selection ? { ids: [...exportIds] } : {
+        q: query, severity: severity || null, reviewed: showReviewed,
+      });
+    } catch (error) {
+      setExportError(error.message);
+      if (error.status === 401) onError(error);
+    } finally { setExporting(false); }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -121,15 +149,29 @@ export default function IncidentJournal({ lang, initialIncident, onClose, onErro
             {["critical", "error", "warning", ...(showReviewed ? ["test"] : [])].map((name) => <option key={name} value={name}>{c[name]}</option>)}
           </select></label>
         </div>
+        <div className="iacon-journal-export">
+          <button disabled={loading || !rows.length} onClick={() => setExportIds((previous) =>
+            new Set([...previous, ...rows.map((row) => row.id)]))}>{c.selectPage}</button>
+          <button disabled={!exportIds.size} onClick={() => setExportIds(new Set())}>{c.clearSelection}</button>
+          <button disabled={exporting || !exportIds.size} onClick={() => download(true)}>
+            {c.exportSelected} ({exportIds.size})</button>
+          <button disabled={exporting || loading || (!rows.length && offset === 0)} onClick={() => download(false)}>
+            {c.exportMatching}</button>
+        </div>
+        {exporting && <p className="iacon-note" role="status">{c.exporting}</p>}
+        {exportError && <p className="iacon-alert" role="alert">{exportError}</p>}
         {listError ? <p className="iacon-alert" role="alert">{listError}</p> : loading ?
           <p className="iacon-note" role="status">{c.loading}</p> : !rows.length ?
           <p className="iacon-note">{c.empty}</p> :
-          <ul className="iacon-journal-list">{rows.map((row) => <li key={row.id}>
+          <ul className="iacon-journal-list">{rows.map((row) => <li className="iacon-journal-selectable" key={row.id}>
+            <input type="checkbox" aria-label={`${c.selectForExport} ${humanize(row.event)} ${row.id}`}
+              checked={exportIds.has(row.id)} onChange={() => toggleExport(row.id)} />
             <button aria-pressed={selected === row.id} onClick={() => select(row.id)}>
               <span className="iacon-journal-row"><strong>{humanize(row.event)}</strong>
                 <span className={`iacon-journal-severity ${row.severity}`}>{c[row.severity]}</span></span>
               <small>{row.source || c.noSource} · {date(row.observed_at)} · {c.repeats} {row.occurrences}
                 {row.reviewed && ` · ${c.reviewed}`}</small>
+              {row.summary && <small>{row.summary}</small>}
             </button>
           </li>)}</ul>}
         {(offset > 0 || nextOffset !== null) && <div className="iacon-pagination">
@@ -142,6 +184,11 @@ export default function IncidentJournal({ lang, initialIncident, onClose, onErro
         {!active ? <p className="iacon-note">{selected && !detailError ? c.loading : c.pick}</p> : <>
           <div className="iacon-journal-row"><h2>{humanize(active.facts.event) || c.titleFallback}</h2>
             <span className={`iacon-journal-severity ${active.severity}`}>{c[active.severity]}</span></div>
+          {active.facts.summary && <p className="iacon-journal-assessment">{active.facts.summary}</p>}
+          {active.facts.diagnostic_message && <><h3>{c.diagnostic}</h3>
+            <p className="iacon-journal-assessment">{active.facts.diagnostic_message}</p></>}
+          {active.facts.next_check && <><h3>{c.nextCheck}</h3>
+            <p className="iacon-journal-assessment">{active.facts.next_check}</p></>}
           <div className="iacon-record-actions">
             <button disabled={active.reviewed || Boolean(working)} onClick={() => change(api.markIncidentReviewed, "review")}>{active.reviewed ? c.reviewed : c.review}</button>
             <a className="iacon-open" href={api.incidentPdfUrl(active.id)}>{c.pdf}</a>
@@ -160,9 +207,12 @@ export default function IncidentJournal({ lang, initialIncident, onClose, onErro
           {active.assessment_state === "available" && <button disabled={Boolean(working)}
             onClick={() => change(api.assessIncident, "assessment")}>{c.assess}</button>}
           <h3>{c.facts}</h3>
-          <dl className="iacon-journal-facts">{Object.entries(active.facts).map(([key, value]) => <div key={key}>
+          <dl className="iacon-journal-facts">{Object.entries(active.facts).filter(([key, value]) =>
+            value != null && !["summary", "next_check", "diagnostic_message", "stack"].includes(key)).map(([key, value]) => <div key={key}>
             <dt>{humanize(key)}</dt><dd>{key.endsWith("_at") ? date(value) : String(value)}</dd>
           </div>)}</dl>
+          {active.facts.stack && <details><summary>{c.stack}</summary>
+            <pre className="iacon-journal-assessment">{active.facts.stack}</pre></details>}
           {active.recent_occurrences.length > 1 && <><h3>{c.history}</h3><ul className="iacon-journal-list">
             {active.recent_occurrences.map((item) => <li key={item.id}>
               <button aria-pressed={selected === item.id} onClick={() => select(item.id)}>{date(item.observed_at)}</button>
