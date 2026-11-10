@@ -64,12 +64,12 @@ class LibraryDelivery:
             raise HTTPException(503, "The SPEDA incident journal is unavailable") from exc
         if upstream.status_code == 404:
             raise HTTPException(404, "No incidents match this export" if suffix == "/export" else "Incident not found")
-        if suffix == "/export" and upstream.status_code == 422:
+        if suffix in {"/export", "/review", "/selection"} and upstream.status_code == 422:
             try:
                 detail = upstream.json().get("detail")
             except (ValueError, AttributeError):
                 detail = None
-            raise HTTPException(422, detail if isinstance(detail, str) else "Check the export selection")
+            raise HTTPException(422, detail if isinstance(detail, str) else "Check the incident selection")
         expected = "application/pdf" if pdf else "application/json"
         if upstream.status_code != 200 or upstream.headers.get("content-type", "").split(";")[0] != expected:
             raise HTTPException(503, "The SPEDA incident journal is unavailable")

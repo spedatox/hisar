@@ -202,6 +202,8 @@ export const listIncidents = (params, signal) => request("/library/incidents", {
 export const getIncident = (id, signal) => request(`/library/incidents/${id}`, { signal });
 export const markIncidentReviewed = (id) => request(`/library/incidents/${id}/review`, { method: "PUT" });
 export const assessIncident = (id) => request(`/library/incidents/${id}/assessment`, { method: "POST" });
+export const selectIncidents = (payload) => json("/library/incidents/selection", "POST", payload);
+export const reviewIncidents = (payload) => json("/library/incidents/review", "PUT", payload);
 export const incidentPdfUrl = (id) => url(`/library/incidents/${id}/pdf`);
 export async function exportIncidents(payload) {
   const response = await fetch(url("/library/incidents/export"), {

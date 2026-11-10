@@ -125,8 +125,9 @@
 .iacon-journal-list button{display:grid;width:100%;text-align:left;gap:5px;padding:9px 10px;min-width:0}
 .iacon-journal-selectable{display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:6px}
 .iacon-journal-selectable input{margin:12px 0 0;accent-color:var(--ia-accent)}
-.iacon-journal-export{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
-.iacon-journal-export button{font-size:12px;padding:5px 8px}
+.iacon-journal-bulk{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.iacon-journal-bulk button{font-size:12px;padding:5px 8px}
+.iacon-journal-links{display:block;width:100%;min-height:5em;margin:0 0 12px;resize:vertical}
 .iacon-journal-list button[aria-pressed="true"]{border-color:var(--ia-accent);background:rgba(54,171,202,.12)}
 .iacon-journal-list small{color:var(--ia-muted);font-size:12px;overflow-wrap:anywhere}
 .iacon-journal-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "./api.js";
 
 const copy = {
@@ -14,8 +14,15 @@ const copy = {
     interrupted: "The assessment was interrupted.", review: "Mark reviewed", pdf: "Export PDF", copyLink: "Copy incident link",
     copied: "Incident link copied.", history: "Recent occurrences", previous: "Previous", next: "Next",
     noSource: "SPEDA runtime", titleFallback: "Incident", failed: "Could not load the incident journal.",
-    exportSelected: "Export selected", exportMatching: "Export all matching", selectPage: "Select page",
-    clearSelection: "Clear selection", exporting: "Preparing PDF…", selectForExport: "Select for PDF export",
+    bulkActions: "Bulk actions", selectedRows: (n) => `Selected incidents (${n})`, matching: "All matching incidents",
+    selectPage: "Select page", clearSelection: "Clear selection", selectIncident: "Select incident",
+    unreview: "Mark unreviewed", assessBatch: (n) => `Assess up to ${n}`, copyLinks: "Copy links",
+    working: "Working…", exporting: "Preparing PDF…", exported: "PDF downloaded.",
+    reviewedCount: (changed, matched, reviewed) => `${changed} of ${matched} incidents marked ${reviewed ? "reviewed" : "unreviewed"}.`,
+    assessmentProgress: (done, total) => `Assessing incidents (${done}/${total})…`,
+    assessedCount: (complete, total, left) => `${complete} of ${total} assessments completed.${left ? ` ${left} eligible for the next batch.` : ""}`,
+    noneToAssess: "No incidents in this scope are available for assessment.",
+    copiedCount: (n) => `${n} incident links copied.`, manualCopy: "Incident links to copy",
     diagnostic: "Recorded error", nextCheck: "Next check", stack: "Stack locations",
   },
   tr: {
@@ -30,13 +37,27 @@ const copy = {
     interrupted: "Değerlendirme kesildi.", review: "İncelendi olarak işaretle", pdf: "PDF indir", copyLink: "Olay bağlantısını kopyala",
     copied: "Olay bağlantısı kopyalandı.", history: "Son tekrarlar", previous: "Önceki", next: "Sonraki",
     noSource: "SPEDA çalışma zamanı", titleFallback: "Olay", failed: "Olay günlüğü yüklenemedi.",
-    exportSelected: "Seçilenleri indir", exportMatching: "Eşleşenlerin tümünü indir", selectPage: "Sayfayı seç",
-    clearSelection: "Seçimi temizle", exporting: "PDF hazırlanıyor…", selectForExport: "PDF için seç",
+    bulkActions: "Toplu işlemler", selectedRows: (n) => `Seçilen olaylar (${n})`, matching: "Eşleşen tüm olaylar",
+    selectPage: "Sayfayı seç", clearSelection: "Seçimi temizle", selectIncident: "Olayı seç",
+    unreview: "İncelenmedi olarak işaretle", assessBatch: (n) => `En fazla ${n} olayı değerlendir`, copyLinks: "Bağlantıları kopyala",
+    working: "İşlem sürüyor…", exporting: "PDF hazırlanıyor…", exported: "PDF indirildi.",
+    reviewedCount: (changed, matched, reviewed) => `${matched} olaydan ${changed} tanesi ${reviewed ? "incelendi" : "incelenmedi"} olarak işaretlendi.`,
+    assessmentProgress: (done, total) => `Olaylar değerlendiriliyor (${done}/${total})…`,
+    assessedCount: (complete, total, left) => `${total} değerlendirmeden ${complete} tanesi tamamlandı.${left ? ` Sonraki grup için ${left} olay uygun.` : ""}`,
+    noneToAssess: "Bu kapsamdaki hiçbir olay değerlendirmeye uygun değil.",
+    copiedCount: (n) => `${n} olay bağlantısı kopyalandı.`, manualCopy: "Kopyalanacak olay bağlantıları",
     diagnostic: "Kaydedilen hata", nextCheck: "Sonraki kontrol", stack: "Çağrı konumları",
   },
 };
 
 const humanize = (value) => value?.replaceAll("_", " ");
+const assessmentBatchSize = 10;
+
+function incidentLink(id) {
+  const link = new URL(window.location.href);
+  link.hash = `incident=${id}`;
+  return link.href;
+}
 
 export default function IncidentJournal({ lang, initialIncident, onClose, onError }) {
   const c = copy[lang] || copy.en;
@@ -54,31 +75,86 @@ export default function IncidentJournal({ lang, initialIncident, onClose, onErro
   const [detailError, setDetailError] = useState("");
   const [working, setWorking] = useState("");
   const [notice, setNotice] = useState("");
-  const [exportIds, setExportIds] = useState(() => new Set());
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState("");
+  const [checkedIds, setCheckedIds] = useState(() => new Set());
+  const [bulkScope, setBulkScope] = useState("selected");
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkError, setBulkError] = useState("");
+  const [bulkLinks, setBulkLinks] = useState("");
+  const mounted = useRef(false);
   const date = (value) => new Date(value).toLocaleString(lang === "tr" ? "tr-TR" : "en-GB", {
     dateStyle: "medium", timeStyle: "short",
   });
   const select = (identity) => { setSelected(identity); setDetailError(""); setNotice(""); };
-  const toggleExport = (id) => setExportIds((previous) => {
+  const toggleChecked = (id) => setCheckedIds((previous) => {
     const next = new Set(previous);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     return next;
   });
 
-  const download = async (selection) => {
-    setExporting(true);
-    setExportError("");
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  const runBulk = async (action) => {
+    const scope = bulkScope === "selected" ? { ids: [...checkedIds] } : {
+      q: query, severity: severity || null, reviewed: showReviewed,
+    };
+    setBulkWorking(true);
+    setBulkError("");
+    setBulkLinks("");
+    setBulkStatus(action === "pdf" ? c.exporting : c.working);
     try {
-      await api.exportIncidents(selection ? { ids: [...exportIds] } : {
-        q: query, severity: severity || null, reviewed: showReviewed,
-      });
+      if (action === "pdf") {
+        await api.exportIncidents(scope);
+        setBulkStatus(c.exported);
+      } else if (action === "review" || action === "unreview") {
+        const markReviewed = action === "review";
+        const { matched, changed } = await api.reviewIncidents({ ...scope, mark_reviewed: markReviewed });
+        setBulkStatus(c.reviewedCount(changed, matched, markReviewed));
+        setOffset(0);
+        setReload((value) => value + 1);
+      } else {
+        const { incidents } = await api.selectIncidents(scope);
+        if (action === "copy") {
+          if (!incidents.length) {
+            setBulkStatus(c.empty);
+            return;
+          }
+          const links = incidents.map(({ id }) => incidentLink(id)).join("\n");
+          try {
+            await navigator.clipboard.writeText(links);
+            setBulkStatus(c.copiedCount(incidents.length));
+          } catch {
+            setBulkStatus("");
+            setBulkLinks(links);
+          }
+        } else {
+          const eligible = incidents.filter((item) => item.assessment_state === "available");
+          const batch = eligible.slice(0, assessmentBatchSize);
+          if (!batch.length) {
+            setBulkStatus(c.noneToAssess);
+            return;
+          }
+          let complete = 0;
+          setBulkStatus(c.assessmentProgress(0, batch.length));
+          for (const [index, { id }] of batch.entries()) {
+            if (!mounted.current) return;
+            const result = await api.assessIncident(id);
+            if (result.assessment_state === "complete") complete += 1;
+            setIncident((previous) => previous?.id === id ? result : previous);
+            setBulkStatus(c.assessmentProgress(index + 1, batch.length));
+          }
+          setBulkStatus(c.assessedCount(complete, batch.length, eligible.length - batch.length));
+        }
+      }
     } catch (error) {
-      setExportError(error.message);
+      setBulkStatus("");
+      setBulkError(error.message);
       if (error.status === 401) onError(error);
-    } finally { setExporting(false); }
+    } finally { setBulkWorking(false); }
   };
 
   useEffect(() => {
@@ -124,6 +200,8 @@ export default function IncidentJournal({ lang, initialIncident, onClose, onErro
   };
 
   const active = incident?.id === selected ? incident : null;
+  const bulkDisabled = bulkWorking || Boolean(working) ||
+    (bulkScope === "selected" ? !checkedIds.size : loading || Boolean(listError) || (!rows.length && offset === 0));
   return <section className="iacon iacon-journal">
     <header className="iacon-header">
       <div className="iacon-brand"><span className="iacon-optimus-logo" aria-hidden="true" /><div>
@@ -149,23 +227,35 @@ export default function IncidentJournal({ lang, initialIncident, onClose, onErro
             {["critical", "error", "warning", ...(showReviewed ? ["test"] : [])].map((name) => <option key={name} value={name}>{c[name]}</option>)}
           </select></label>
         </div>
-        <div className="iacon-journal-export">
-          <button disabled={loading || !rows.length} onClick={() => setExportIds((previous) =>
+        <div className="iacon-journal-bulk">
+          <button disabled={bulkWorking || loading || !rows.length} onClick={() => setCheckedIds((previous) =>
             new Set([...previous, ...rows.map((row) => row.id)]))}>{c.selectPage}</button>
-          <button disabled={!exportIds.size} onClick={() => setExportIds(new Set())}>{c.clearSelection}</button>
-          <button disabled={exporting || !exportIds.size} onClick={() => download(true)}>
-            {c.exportSelected} ({exportIds.size})</button>
-          <button disabled={exporting || loading || (!rows.length && offset === 0)} onClick={() => download(false)}>
-            {c.exportMatching}</button>
+          <button disabled={bulkWorking || !checkedIds.size} onClick={() => setCheckedIds(new Set())}>{c.clearSelection}</button>
         </div>
-        {exporting && <p className="iacon-note" role="status">{c.exporting}</p>}
-        {exportError && <p className="iacon-alert" role="alert">{exportError}</p>}
+        <div className="iacon-journal-filters">
+          <label>{c.bulkActions}<select aria-label={c.bulkActions} disabled={bulkWorking}
+            value={bulkScope} onChange={(e) => setBulkScope(e.target.value)}>
+            <option value="selected">{c.selectedRows(checkedIds.size)}</option><option value="matching">{c.matching}</option>
+          </select></label>
+        </div>
+        <div className="iacon-journal-bulk">
+          <button disabled={bulkDisabled} onClick={() => runBulk("review")}>{c.review}</button>
+          <button disabled={bulkDisabled || (bulkScope === "matching" && !showReviewed)}
+            onClick={() => runBulk("unreview")}>{c.unreview}</button>
+          <button disabled={bulkDisabled} onClick={() => runBulk("assessment")}>{c.assessBatch(assessmentBatchSize)}</button>
+          <button disabled={bulkDisabled} onClick={() => runBulk("pdf")}>{c.pdf}</button>
+          <button disabled={bulkDisabled} onClick={() => runBulk("copy")}>{c.copyLinks}</button>
+        </div>
+        {bulkStatus && <p className="iacon-note" role="status">{bulkStatus}</p>}
+        {bulkError && <p className="iacon-alert" role="alert">{bulkError}</p>}
+        {bulkLinks && <textarea className="iacon-journal-links" readOnly aria-label={c.manualCopy} value={bulkLinks}
+          onFocus={(event) => event.target.select()} />}
         {listError ? <p className="iacon-alert" role="alert">{listError}</p> : loading ?
           <p className="iacon-note" role="status">{c.loading}</p> : !rows.length ?
           <p className="iacon-note">{c.empty}</p> :
           <ul className="iacon-journal-list">{rows.map((row) => <li className="iacon-journal-selectable" key={row.id}>
-            <input type="checkbox" aria-label={`${c.selectForExport} ${humanize(row.event)} ${row.id}`}
-              checked={exportIds.has(row.id)} onChange={() => toggleExport(row.id)} />
+            <input type="checkbox" aria-label={`${c.selectIncident} ${humanize(row.event)} ${row.id}`}
+              checked={checkedIds.has(row.id)} disabled={bulkWorking} onChange={() => toggleChecked(row.id)} />
             <button aria-pressed={selected === row.id} onClick={() => select(row.id)}>
               <span className="iacon-journal-row"><strong>{humanize(row.event)}</strong>
                 <span className={`iacon-journal-severity ${row.severity}`}>{c[row.severity]}</span></span>
@@ -190,21 +280,20 @@ export default function IncidentJournal({ lang, initialIncident, onClose, onErro
           {active.facts.next_check && <><h3>{c.nextCheck}</h3>
             <p className="iacon-journal-assessment">{active.facts.next_check}</p></>}
           <div className="iacon-record-actions">
-            <button disabled={active.reviewed || Boolean(working)} onClick={() => change(api.markIncidentReviewed, "review")}>{active.reviewed ? c.reviewed : c.review}</button>
+            <button disabled={active.reviewed || Boolean(working) || bulkWorking}
+              onClick={() => change(api.markIncidentReviewed, "review")}>{active.reviewed ? c.reviewed : c.review}</button>
             <a className="iacon-open" href={api.incidentPdfUrl(active.id)}>{c.pdf}</a>
             <button onClick={async () => {
               try {
-                const link = new URL(window.location.href);
-                link.hash = `incident=${active.id}`;
-                await navigator.clipboard.writeText(link.href);
+                await navigator.clipboard.writeText(incidentLink(active.id));
                 setNotice(c.copied);
-              } catch { setNotice(`${window.location.origin}${window.location.pathname}#incident=${active.id}`); }
+              } catch { setNotice(incidentLink(active.id)); }
             }}>{c.copyLink}</button>
           </div>
           {notice && <p className="iacon-note" role="status">{notice}</p>}
           <h3>{c.assessment}</h3>
           <p className="iacon-journal-assessment">{active.assessment || (working === "assessment" ? c.running : c[active.assessment_state])}</p>
-          {active.assessment_state === "available" && <button disabled={Boolean(working)}
+          {active.assessment_state === "available" && <button disabled={Boolean(working) || bulkWorking}
             onClick={() => change(api.assessIncident, "assessment")}>{c.assess}</button>}
           <h3>{c.facts}</h3>
           <dl className="iacon-journal-facts">{Object.entries(active.facts).filter(([key, value]) =>

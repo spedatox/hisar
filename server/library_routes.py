@@ -14,12 +14,16 @@ IncidentId = Annotated[str, Path(pattern=r"^[a-f0-9]{32}$")]
 IncidentSeverity = Literal["critical", "error", "warning", "test"]
 
 
-class IncidentExport(BaseModel):
+class IncidentSelection(BaseModel):
     ids: list[Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{32}$")]] | None = Field(
         default=None, min_length=1, max_length=1000)
     reviewed: bool = False
     severity: IncidentSeverity | None = None
     q: str = Field("", max_length=120)
+
+
+class IncidentBulkReview(IncidentSelection):
+    mark_reviewed: bool
 
 
 @router.get("/incidents")
@@ -34,9 +38,21 @@ async def incident_list(request: Request, reviewed: bool = False,
 
 
 @router.post("/incidents/export")
-async def export_incidents(body: IncidentExport, request: Request, principal=Depends(require_owner)):
+async def export_incidents(body: IncidentSelection, request: Request, principal=Depends(require_owner)):
     return await request.app.state.library_delivery.incident("POST", "/export",
         payload=body.model_dump(exclude_none=True), pdf=True)
+
+
+@router.post("/incidents/selection")
+async def incident_selection(body: IncidentSelection, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.incident("POST", "/selection",
+        payload=body.model_dump(exclude_none=True))
+
+
+@router.put("/incidents/review")
+async def bulk_incident_review(body: IncidentBulkReview, request: Request, principal=Depends(require_owner)):
+    return await request.app.state.library_delivery.incident("PUT", "/review",
+        payload=body.model_dump(exclude_none=True))
 
 
 @router.get("/incidents/{identity}")

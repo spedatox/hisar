@@ -25,12 +25,18 @@ def test_incident_journal_proxies_only_owner_requests(client, monkeypatch):
         calls.append((method, url, kwargs))
         if url.endswith(("/pdf", "/export")):
             return httpx.Response(200, headers={"Content-Type": "application/pdf"}, content=b"%PDF-1.7")
+        if url.endswith("/review"):
+            if kwargs["json"].get("ids") == ["b" * 32]:
+                return httpx.Response(422, json={"detail": "Selected incidents are unavailable."})
+            return httpx.Response(200, json={"matched": 1, "changed": 1})
         return httpx.Response(200, json={"incidents": []})
 
     monkeypatch.setattr(delivery.http, "request", request)
     assert client.get("/library/incidents").status_code == 401
     assert client.get("/library/incidents", headers=MACHINE).status_code == 403
     assert client.post("/library/incidents/export", json={}).status_code == 401
+    assert client.post("/library/incidents/selection", json={}).status_code == 401
+    assert client.put("/library/incidents/review", headers=MACHINE, json={"mark_reviewed": True}).status_code == 403
     assert client.post(f"/library/incidents/{identity}/assessment", headers=READER).status_code == 401
     assert not calls
 
@@ -47,6 +53,18 @@ def test_incident_journal_proxies_only_owner_requests(client, monkeypatch):
     assert bulk.content == b"%PDF-1.7"
     assert 'damage-control-journal.pdf' in bulk.headers["content-disposition"]
     assert calls[-1][2]["json"]["ids"] == [identity]
+    assert client.post("/library/incidents/selection", json={"reviewed": True, "q": "orion"}).status_code == 200
+    assert calls[-1][1].endswith("/selection")
+    assert calls[-1][2]["json"] == {"reviewed": True, "q": "orion"}
+    review = client.put("/library/incidents/review", json={"ids": [identity], "mark_reviewed": False})
+    assert review.json() == {"matched": 1, "changed": 1}
+    assert calls[-1][0] == "PUT"
+    assert calls[-1][1].endswith("/review")
+    assert calls[-1][2]["json"]["mark_reviewed"] is False
+    assert client.put("/library/incidents/review", json={}).status_code == 422
+    stale = client.put("/library/incidents/review", json={"ids": ["b" * 32], "mark_reviewed": True})
+    assert stale.status_code == 422
+    assert stale.json()["detail"] == "Selected incidents are unavailable."
 
 
 @pytest.fixture(autouse=True)
